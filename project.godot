@@ -1,0 +1,22 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format documentation: https://docs.godotengine.org/en/stable/
+
+config_version=5
+
+[application]
+
+config/name="Bulwark"
+config/description="塔防游戏（代号 bulwark）。前期主电脑端，Godot 4 开发。"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
