@@ -41,9 +41,9 @@ const RECIPES := [
 #   col 颜色(hex) cost 造价(仅基础塔可建造) desc 简述(图鉴用)
 const TOWERS := {
 	# ── 一级基础塔 ──
-	"L": {"n": "激光猪", "t": 1, "c": "L", "dmg": 22.0, "rng": 230.0, "cd": 1.1, "bhv": "pierce", "pierce": 2, "splash": 0.0, "debuff": false, "col": "3a8ee6", "cost": 70, "desc": "蓝色激光持续照射，单体穿透2个敌人。攻速慢、不追踪。"},
-	"E": {"n": "元素猪", "t": 1, "c": "E", "dmg": 14.0, "rng": 175.0, "cd": 1.4, "bhv": "aoe", "pierce": 0, "splash": 72.0, "debuff": true, "col": "a64ed6", "cost": 60, "desc": "抛射元素球范围爆炸，随机燃烧/冰冻效果。单发低、弹速慢。"},
-	"B": {"n": "机枪猪", "t": 1, "c": "B", "dmg": 8.0, "rng": 195.0, "cd": 0.35, "bhv": "single", "pierce": 0, "splash": 0.0, "debuff": false, "col": "e6943a", "cost": 45, "desc": "突突突连射，高速稳定物理伤害。无穿透、打不动高甲。"},
+	"L": {"n": "激光猪", "t": 1, "c": "L", "dmg": 22.0, "rng": 230.0, "cd": 1.1, "bhv": "pierce", "pierce": 2, "splash": 0.0, "debuff": false, "col": "3a8ee6", "cost": 70, "cells": [2, 1], "desc": "蓝色激光持续照射，单体穿透2个敌人。攻速慢、不追踪。"},
+	"E": {"n": "元素猪", "t": 1, "c": "E", "dmg": 14.0, "rng": 175.0, "cd": 1.4, "bhv": "aoe", "pierce": 0, "splash": 72.0, "debuff": true, "col": "a64ed6", "cost": 60, "cells": [2, 2], "desc": "抛射元素球范围爆炸，随机燃烧/冰冻效果。单发低、弹速慢。"},
+	"B": {"n": "机枪猪", "t": 1, "c": "B", "dmg": 8.0, "rng": 195.0, "cd": 0.35, "bhv": "single", "pierce": 0, "splash": 0.0, "debuff": false, "col": "e6943a", "cost": 45, "cells": [1, 1], "desc": "突突突连射，高速稳定物理伤害。无穿透、打不动高甲。"},
 
 	# ── 二级融合塔 ──
 	"LL": {"n": "聚焦激光", "t": 2, "c": "LL", "dmg": 46.0, "rng": 300.0, "cd": 1.1, "bhv": "pierce", "pierce": 5, "splash": 0.0, "debuff": false, "col": "e6483a", "desc": "更粗的红色激光，伤害×2，穿透5个，射程+30%。"},
@@ -109,3 +109,13 @@ static func ids_by_tier(t: int) -> Array:
 
 static func color_of(id: String) -> Color:
 	return Color(TOWERS.get(id, {}).get("col", "ffffff"))
+
+## 占地格数 (列, 行)。基础塔显式指定；其余按等级默认（二级2x2、三级2x2）。
+static func footprint(id: String) -> Vector2i:
+	var d := get_def(id)
+	if d.has("cells"):
+		return Vector2i(int(d["cells"][0]), int(d["cells"][1]))
+	match int(d.get("t", 1)):
+		1: return Vector2i(1, 1)
+		2: return Vector2i(2, 2)
+		_: return Vector2i(2, 2)
