@@ -30,6 +30,7 @@ var _flash: float = 0.0
 var _flash_to: Vector2 = Vector2.ZERO
 var _beam_pts: Array = []
 var _link_pts: Array = []
+var _prism_segs: Array = []
 var _target: Enemy = null
 
 func _ready() -> void:
@@ -57,6 +58,7 @@ func _process(delta: float) -> void:
 		return
 	match atk:
 		"beam": _do_beam(delta)
+		"split": _do_prism(delta)
 		"domain": _do_domain(delta)
 		"mine": _do_mine(delta)
 		"charge": _do_charge(delta)
@@ -169,6 +171,42 @@ func _do_beam(delta: float) -> void:
 	_beam_pts = [global_position, far if hits > 0 else global_position + dirv * range_r]
 	queue_redraw()
 
+# ── 棱镜折射分裂 ──
+func _do_prism(delta: float) -> void:
+	_prism_segs = []
+	var primary := _find_nearest()
+	if primary == null:
+		queue_redraw()
+		return
+	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult()
+	var visited := {primary.get_instance_id(): true}
+	primary.take_damage(dps * delta, ignore_armor)
+	_prism_segs.append([global_position, primary.global_position, 4.0])
+	# 一级分裂：最多3道小激光
+	for a in _nearest_others(primary.global_position, 3, visited, 130.0):
+		a.take_damage(dps * 0.6 * delta, ignore_armor)
+		_prism_segs.append([primary.global_position, a.global_position, 2.6])
+		# 二级分裂：最多3道小小激光
+		for c in _nearest_others(a.global_position, 3, visited, 110.0):
+			c.take_damage(dps * 0.36 * delta, ignore_armor)
+			_prism_segs.append([a.global_position, c.global_position, 1.6])
+	queue_redraw()
+
+func _nearest_others(pos: Vector2, n: int, visited: Dictionary, radius: float) -> Array:
+	var arr: Array = []
+	for e in _enemies():
+		if e.is_queued_for_deletion() or visited.has(e.get_instance_id()):
+			continue
+		var d: float = pos.distance_to(e.global_position)
+		if d <= radius:
+			arr.append([d, e])
+	arr.sort_custom(func(a, b): return a[0] < b[0])
+	var out: Array = []
+	for i in mini(n, arr.size()):
+		out.append(arr[i][1])
+		visited[arr[i][1].get_instance_id()] = true
+	return out
+
 # ── 领域 ──
 func _do_domain(delta: float) -> void:
 	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult() * delta
@@ -233,29 +271,43 @@ func _random_path_point() -> Vector2:
 # ── 充能炮 ──
 func _do_charge(delta: float) -> void:
 	_charge += delta
+	queue_redraw()  # 刷新充能进度条
 	if _charge < fire_interval:
 		return
+	# 蓄满：有目标则自动发射（也可玩家点击手动发射）
+	if _find_farthest() != null:
+		_railgun_fire()
+
+func _railgun_fire() -> void:
 	var t := _find_farthest()
-	if t == null:
-		return
-	_charge = 0.0
-	var dirv := (t.global_position - global_position).normalized()
+	var dirv := (t.global_position - global_position).normalized() if t != null else Vector2.RIGHT
 	var endp := global_position + dirv * 1600.0
 	for e in _enemies():
 		if e.is_queued_for_deletion():
 			continue
 		if _dist_seg(e.global_position, global_position, endp) <= 38.0 + e.radius:
 			e.take_damage(damage * _catalyst_mult(), ignore_armor)
+	_charge = 0.0
 	_flash = 0.22
 	_flash_to = endp
 	queue_redraw()
 
-# ── 塔间连线 ──
+## 玩家点击轨道炮手动发射（已蓄满才有效）
+func manual_fire() -> bool:
+	if atk == "charge" and _charge >= fire_interval:
+		_railgun_fire()
+		return true
+	return false
+
+func charge_ratio() -> float:
+	return clampf(_charge / fire_interval, 0.0, 1.0) if atk == "charge" else 0.0
+
+# ── 等离子场：连接范围内所有类型的塔，敌人穿过受伤+减速 ──
 func _do_link(delta: float) -> void:
 	_link_pts = []
 	var dps := damage * 1.5 * _catalyst_mult() * delta
 	for o in get_tree().get_nodes_in_group("towers"):
-		if o == self or not is_instance_valid(o) or o.atk != "link":
+		if o == self or not is_instance_valid(o):
 			continue
 		if global_position.distance_to(o.global_position) > range_r:
 			continue
@@ -265,6 +317,7 @@ func _do_link(delta: float) -> void:
 				continue
 			if _dist_seg(e.global_position, global_position, o.global_position) <= 12.0 + e.radius:
 				e.take_damage(dps, ignore_armor)
+				e.apply_debuff("slow", 0.6, 0.5)
 	queue_redraw()
 
 # ── 狙击 / 标记 / 弹道（cd 触发）──
@@ -376,6 +429,11 @@ func _draw() -> void:
 		var w := 3.0 + tier * 1.5
 		draw_line(to_local(_beam_pts[0]), to_local(_beam_pts[1]), Color(color.r, color.g, color.b, 0.85), w)
 		draw_line(to_local(_beam_pts[0]), to_local(_beam_pts[1]), Color(1, 1, 1, 0.6), w * 0.4)
+	# 棱镜折射光束（主光束 + 分裂小激光）
+	if atk == "split":
+		for seg in _prism_segs:
+			draw_line(to_local(seg[0]), to_local(seg[1]), Color(color.r, color.g, color.b, 0.85), seg[2])
+			draw_line(to_local(seg[0]), to_local(seg[1]), Color(1, 1, 1, 0.5), seg[2] * 0.4)
 	# 塔间连线
 	if atk == "link":
 		for q in _link_pts:
@@ -392,3 +450,13 @@ func _draw() -> void:
 	draw_circle(Vector2(0, -r * 0.4), 6.0, color)
 	for i in tier:
 		draw_circle(Vector2(-6.0 + i * 6.0, r + 6.0), 2.5, color)
+	# 轨道炮：充能进度条 + 蓄满提示
+	if atk == "charge":
+		var ratio := charge_ratio()
+		var bw := 46.0
+		var by := -r - 16.0
+		draw_rect(Rect2(-bw / 2.0, by, bw, 6.0), Color(0, 0, 0, 0.6))
+		draw_rect(Rect2(-bw / 2.0, by, bw * ratio, 6.0), Color(1.0, 0.85, 0.3) if ratio < 1.0 else Color(0.4, 1.0, 0.5))
+		draw_rect(Rect2(-bw / 2.0, by, bw, 6.0), Color(1, 1, 1, 0.3), false, 1.0)
+		if ratio >= 1.0:
+			draw_string(ThemeDB.fallback_font, Vector2(-40, by - 6.0), "蓄满! 点击发射", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 0.6))

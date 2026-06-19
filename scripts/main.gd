@@ -319,6 +319,13 @@ func _on_left_up(pos: Vector2) -> void:
 			return
 		else:
 			_set_message("无法合成：需同级且配方存在（三级已封顶）。", 2.0)
+	# 原地轻点（没拖走）→ 轨道炮手动发射
+	if target == null and _world_to_cell(pos) in drag_orig_cells:
+		if moving.manual_fire():
+			_set_message("轨道炮·手动发射！", 1.2)
+		_reoccupy(moving, drag_orig_cells)
+		queue_redraw()
+		return
 	# 落在空地 → 移动到新位置；放不下则退回原位
 	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 	if _can_place(anchor, size):

@@ -54,7 +54,7 @@ const TOWERS := {
 	"EB": {"n": "榴弹炮", "t": 2, "c": "EB", "dmg": 26.0, "rng": 205.0, "cd": 1.2, "bhv": "aoe", "pierce": 0, "splash": 108.0, "debuff": true, "col": "d67a4e", "desc": "元素榴弹物理爆炸+灼烧，爆炸范围更大。"},
 
 	# ── 三级质变塔（21）──
-	"prism": {"n": "棱镜塔", "t": 3, "c": "LLLL", "dmg": 60.0, "rng": 320.0, "cd": 1.0, "bhv": "pierce", "pierce": 9, "splash": 0.0, "debuff": false, "col": "ff5a5a", "desc": "折射分裂：命中后分裂成多道小激光，怪越多越猛。"},
+	"prism": {"n": "棱镜塔", "t": 3, "c": "LLLL", "dmg": 26.0, "rng": 320.0, "cd": 1.0, "bhv": "pierce", "pierce": 9, "splash": 0.0, "debuff": false, "col": "ff5a5a", "desc": "折射分裂：主激光命中后分裂3道小激光，再各分裂3道小小激光。"},
 	"reactor": {"n": "元素反应炉", "t": 3, "c": "EEEE", "dmg": 24.0, "rng": 170.0, "cd": 0.5, "bhv": "aoe", "pierce": 0, "splash": 150.0, "debuff": true, "col": "d65adf", "desc": "领域展开：塔周围元素领域每秒三重元素伤害。"},
 	"railgun": {"n": "轨道炮", "t": 3, "c": "BBBB", "dmg": 220.0, "rng": 700.0, "cd": 3.5, "bhv": "pierce", "pierce": 99, "splash": 0.0, "debuff": false, "col": "ffd23a", "desc": "充能巨炮：满弹一炮穿透全路径所有敌人。"},
 	"beam_burst": {"n": "光束爆裂炮", "t": 3, "c": "LLLE", "dmg": 70.0, "rng": 300.0, "cd": 1.0, "bhv": "pierce", "pierce": 4, "splash": 60.0, "debuff": true, "col": "ff7a5a", "desc": "命中引爆：照射叠满3层引发元素爆炸，范围渐增。"},
@@ -67,7 +67,7 @@ const TOWERS := {
 	"twin_laser": {"n": "双子激光塔", "t": 3, "c": "LLEE", "dmg": 42.0, "rng": 270.0, "cd": 0.5, "bhv": "pierce", "pierce": 3, "splash": 0.0, "debuff": true, "col": "5ae6c7", "desc": "双子同步：双激光交替射击，每2秒一次拍频爆发。"},
 	"precision_snipe": {"n": "精准狙击塔", "t": 3, "c": "LLBB", "dmg": 120.0, "rng": 340.0, "cd": 1.4, "bhv": "single", "pierce": 0, "splash": 0.0, "debuff": false, "col": "9ad6ff", "desc": "锁头暴击：锁定血最高的敌人，必定暴击×3。"},
 	"rapid_ap_chain": {"n": "连射穿甲炮", "t": 3, "c": "LLBB", "dmg": 28.0, "rng": 260.0, "cd": 0.18, "bhv": "pierce", "pierce": 99, "splash": 0.0, "debuff": false, "col": "6ec7e6", "desc": "穿透增伤：每穿透一个敌人伤害+15%（无上限）。"},
-	"mine_layer": {"n": "自动布雷车", "t": 3, "c": "EEBB", "dmg": 55.0, "rng": 220.0, "cd": 1.0, "bhv": "aoe", "pierce": 0, "splash": 100.0, "debuff": true, "col": "c79a5a", "desc": "地雷战术：路径埋元素地雷，无限叠加越打越强。"},
+	"mine_layer": {"n": "自动布雷车", "t": 3, "c": "EEBB", "dmg": 30.0, "rng": 220.0, "cd": 1.0, "bhv": "aoe", "pierce": 0, "splash": 64.0, "debuff": true, "col": "c79a5a", "desc": "地雷战术：路径埋元素地雷，无限叠加越打越强。"},
 	"gl_array": {"n": "元素榴弹阵列", "t": 3, "c": "EEBB", "dmg": 20.0, "rng": 240.0, "cd": 1.5, "bhv": "aoe", "pierce": 0, "splash": 100.0, "debuff": true, "col": "d6b05a", "desc": "齐射轰炸：一次6发榴弹，落地留元素残渣灼烧。"},
 	"emp": {"n": "电磁脉冲塔", "t": 3, "c": "LLEB", "dmg": 30.0, "rng": 230.0, "cd": 1.6, "bhv": "aoe", "pierce": 0, "splash": 140.0, "debuff": true, "col": "5ad6df", "desc": "EMP干扰：范围内敌人攻速-70%、移动-50%。"},
 	"laser_detonate": {"n": "激光引爆炮", "t": 3, "c": "LLEB", "dmg": 50.0, "rng": 290.0, "cd": 1.0, "bhv": "aoe", "pierce": 0, "splash": 110.0, "debuff": true, "col": "df8a5a", "desc": "标记→引爆：附着元素弹再用激光引爆，伤害×3。"},
@@ -92,7 +92,7 @@ const BASE_IDS := ["L", "E", "B"]
 const ATTACK := {
 	"L": "beam", "E": "proj", "B": "proj",
 	"LL": "beam", "EE": "proj", "BB": "proj", "LE": "beam", "LB": "proj", "EB": "proj",
-	"prism": "beam", "reactor": "domain", "railgun": "charge",
+	"prism": "split", "reactor": "domain", "railgun": "charge",
 	"beam_burst": "beam", "rapid_ap": "proj", "ele_matrix": "beam", "barrage": "proj",
 	"anti_mat": "snipe", "burst_gl": "proj", "plasma_field": "link", "twin_laser": "beam",
 	"precision_snipe": "snipe", "rapid_ap_chain": "proj", "mine_layer": "mine",
