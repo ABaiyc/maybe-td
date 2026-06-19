@@ -274,30 +274,31 @@ func _do_charge(delta: float) -> void:
 	queue_redraw()  # 刷新充能进度条
 	if _charge < fire_interval:
 		return
-	# 蓄满：有目标则自动发射（也可玩家点击手动发射）
+	# 蓄满：有目标则自动满威力发射
 	if _find_farthest() != null:
-		_railgun_fire()
+		_railgun_fire(1.0)
 
-func _railgun_fire() -> void:
+func _railgun_fire(scale: float) -> void:
 	var t := _find_farthest()
 	var dirv := (t.global_position - global_position).normalized() if t != null else Vector2.RIGHT
 	var endp := global_position + dirv * 1600.0
+	var dmg := damage * scale * _catalyst_mult()
 	for e in _enemies():
 		if e.is_queued_for_deletion():
 			continue
 		if _dist_seg(e.global_position, global_position, endp) <= 38.0 + e.radius:
-			e.take_damage(damage * _catalyst_mult(), ignore_armor)
+			e.take_damage(dmg, ignore_armor)
 	_charge = 0.0
 	_flash = 0.22
 	_flash_to = endp
 	queue_redraw()
 
-## 玩家点击轨道炮手动发射（已蓄满才有效）
+## 手动发射（发射按钮触发）：未蓄满也能放，伤害随当前充能比例打折
 func manual_fire() -> bool:
-	if atk == "charge" and _charge >= fire_interval:
-		_railgun_fire()
-		return true
-	return false
+	if atk != "charge" or charge_ratio() < 0.1:
+		return false
+	_railgun_fire(charge_ratio())
+	return true
 
 func charge_ratio() -> float:
 	return clampf(_charge / fire_interval, 0.0, 1.0) if atk == "charge" else 0.0

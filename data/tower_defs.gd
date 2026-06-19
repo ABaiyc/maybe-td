@@ -134,12 +134,9 @@ static func ids_by_tier(t: int) -> Array:
 static func color_of(id: String) -> Color:
 	return Color(TOWERS.get(id, {}).get("col", "ffffff"))
 
-## 占地格数 (列, 行)。基础塔显式指定；其余按等级默认（二级2x2、三级2x2）。
+## 占地格数 (列, 行)，统一按等级：一级 1 格、二级 4 格、三级 6 格。
 static func footprint(id: String) -> Vector2i:
-	var d := get_def(id)
-	if d.has("cells"):
-		return Vector2i(int(d["cells"][0]), int(d["cells"][1]))
-	match int(d.get("t", 1)):
-		1: return Vector2i(1, 1)
-		2: return Vector2i(2, 2)
-		_: return Vector2i(2, 2)
+	match int(get_def(id).get("t", 1)):
+		1: return Vector2i(1, 1)  # 1 格
+		2: return Vector2i(2, 2)  # 4 格
+		_: return Vector2i(3, 2)  # 6 格

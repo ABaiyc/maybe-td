@@ -1,17 +1,21 @@
 extends Node2D
-## 关卡编排（M2）：在 M1 基础上加入——
-##  · 网格自由放置（除路径外任意处；不同塔占不同格数；格子悬停才显示）
-##  · 点击位置 → 弹出三基础塔选项 → 选择放置
-##  · 拖拽合成（同级配方融合，三级封顶）
-##  · 战斗中可放置/拆除/合成
+## 关卡编排：阶段机(开始→10s准备→战斗→结算) + 大肥猪国王 +
+## 右侧面板拖拽部署基础塔 + 已放置塔拖拽移动/合成 + 轨道炮发射按钮。
 
 const CELL := 40.0
 const COLS := 32
 const ROWS := 18
-const PATH_CLEAR := 42.0   # 离路径中心多近的格子不可建造
+const PATH_CLEAR := 42.0
 const KING_CLEAR := 72.0
-const TOP_CLEAR := 80.0    # 顶部 HUD 区
+const TOP_CLEAR := 80.0
 const SELL_REFUND := 0.6
+
+# 右侧基础塔面板
+const PAL_X := 1176.0
+const PAL_W := 92.0
+const PAL_H := 72.0
+const PAL_Y0 := 120.0
+const PAL_GAP := 82.0
 
 var _debug_autoplay := false
 
@@ -19,6 +23,7 @@ var level: Dictionary
 var waypoints: PackedVector2Array
 var bg_color := Color(0.13, 0.16, 0.12)
 var road_color := Color(0.29, 0.35, 0.21)
+var _font: Font
 
 var enemies_container: Node2D
 var towers_container: Node2D
@@ -35,19 +40,19 @@ var spawn_queue: Array = []
 var all_waves_spawned := false
 
 # 网格 / 放置
-var blocked := {}            # Vector2i -> true（路径/越界/禁区）
-var occupied_cells := {}     # Vector2i -> Tower
-var tower_cells := {}        # Tower -> Array[Vector2i]
+var blocked := {}
+var occupied_cells := {}
+var tower_cells := {}
 var hover_cell := Vector2i(-999, -999)
 
-# 拖拽移动/合成
+# 拖拽移动已放置的塔
 var dragging := false
 var drag_tower: Tower = null
 var drag_orig_cells: Array = []
 
-# 建造弹窗
-var build_popup: Control
-var build_cell := Vector2i.ZERO
+# 从右侧面板拖拽部署
+var deploy_dragging := false
+var deploy_id := ""
 
 # HUD
 var gold_label: Label
@@ -59,6 +64,7 @@ var start_button: Button
 var _msg_timeout := 0.0
 
 func _ready() -> void:
+	_font = ThemeDB.fallback_font
 	level = Levels.get_level(0)
 	waypoints = PackedVector2Array(level["waypoints"])
 	bg_color = Color(level.get("bg", "21281b"))
@@ -72,7 +78,7 @@ func _ready() -> void:
 	GameState.changed.connect(_refresh_hud)
 	GameState.game_over.connect(_on_game_over)
 	_refresh_hud()
-	_set_message("点击「开始」进入 10 秒布防。\n点击空地选择防御塔，拖动塔到同级塔上可合成。")
+	_set_message("点击「开始」进入 10 秒布防。\n从右侧面板把猪塔拖到地图上部署；拖动已放置的塔到同级塔上可合成。")
 	queue_redraw()
 	if _debug_autoplay:
 		_run_autoplay()
@@ -101,6 +107,8 @@ func _compute_blocked() -> void:
 				bad = true
 			elif center.distance_to(kpos) < KING_CLEAR:
 				bad = true
+			elif _in_palette(center):
+				bad = true
 			else:
 				for i in range(waypoints.size() - 1):
 					if _dist_point_seg(center, waypoints[i], waypoints[i + 1]) < PATH_CLEAR:
@@ -115,7 +123,7 @@ func _build_hud() -> void:
 	king_label = _mk_label(layer, Vector2(20, 42), 22)
 	wave_label = _mk_label(layer, Vector2(250, 12), 22)
 	phase_label = _mk_label(layer, Vector2(250, 42), 22)
-	message_label = _mk_label(layer, Vector2(330, 270), 24)
+	message_label = _mk_label(layer, Vector2(300, 250), 24)
 	message_label.size = Vector2(620, 180)
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -123,28 +131,11 @@ func _build_hud() -> void:
 
 	start_button = Button.new()
 	start_button.text = "开始"
-	start_button.position = Vector2(1130, 12)
-	start_button.custom_minimum_size = Vector2(110, 56)
-	start_button.add_theme_font_size_override("font_size", 24)
+	start_button.position = Vector2(560, 12)
+	start_button.custom_minimum_size = Vector2(110, 50)
+	start_button.add_theme_font_size_override("font_size", 22)
 	start_button.pressed.connect(_on_start)
 	layer.add_child(start_button)
-
-	# 建造弹窗（点击空地后出现的三选一）
-	build_popup = Control.new()
-	build_popup.visible = false
-	build_popup.size = Vector2(300, 64)
-	layer.add_child(build_popup)
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 6)
-	build_popup.add_child(hb)
-	for tid in TowerDefs.BASE_IDS:
-		var d := TowerDefs.get_def(tid)
-		var b := Button.new()
-		b.text = "%s\n%d金 / %d格" % [d["n"], d["cost"], _cells_count(tid)]
-		b.custom_minimum_size = Vector2(94, 58)
-		b.add_theme_font_size_override("font_size", 14)
-		b.pressed.connect(_on_choose_build.bind(tid))
-		hb.add_child(b)
 
 func _mk_label(parent: Node, pos: Vector2, size: int) -> Label:
 	var l := Label.new()
@@ -173,17 +164,15 @@ func _on_start() -> void:
 	prep_timer = GameState.PREP_SECONDS
 	start_button.hide()
 	GameState.set_phase(GameState.Phase.PREP)
-	_set_message("布防！%.0f 秒后狼群来袭。" % prep_timer)
+	_set_message("布防！%.0f 秒后狼群来袭。" % prep_timer, 0.0)
 
 func _process(delta: float) -> void:
 	if not GameState.running:
 		return
-	# 悬停格刷新
 	var hc := _world_to_cell(get_global_mouse_position())
-	if hc != hover_cell or dragging:
+	if hc != hover_cell or dragging or deploy_dragging:
 		hover_cell = hc
 		queue_redraw()
-	# 拖拽中：防御塔跟随鼠标
 	if dragging and drag_tower != null and is_instance_valid(drag_tower):
 		var size := TowerDefs.footprint(drag_tower.id)
 		var anchor := hc - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
@@ -196,10 +185,11 @@ func _process(delta: float) -> void:
 	elif GameState.phase == GameState.Phase.COMBAT:
 		if all_waves_spawned and _alive_enemies() == 0:
 			GameState.win()
-	# 建造弹窗按钮随金币实时刷新可用状态
-	if build_popup.visible:
-		_refresh_popup_buttons()
-	# 临时提示自动消失
+	# 轨道炮发射按钮需要随充能刷新
+	for t in towers_container.get_children():
+		if t.atk == "charge":
+			queue_redraw()
+			break
 	if _msg_timeout > 0.0:
 		_msg_timeout -= delta
 		if _msg_timeout <= 0.0:
@@ -260,13 +250,12 @@ func _alive_enemies() -> int:
 func _on_game_over(won: bool) -> void:
 	spawn_timer.stop()
 	wave_gap_timer.stop()
-	build_popup.hide()
 	if won:
-		_set_message("🏆 胜利！国王守住了，狼群被全部击退。\n按 R 重新开始。")
+		_set_message("🏆 胜利！国王守住了，狼群被全部击退。\n按 R 重新开始。", 0.0)
 	else:
-		_set_message("💀 国王被狼群攻陷……\n按 R 重新开始。")
+		_set_message("💀 国王被狼群攻陷……\n按 R 重新开始。", 0.0)
 
-# ── 输入：建造弹窗 / 拖拽合成 / 拆除 / 重开 ──
+# ── 输入 ──
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 		get_tree().reload_current_scene()
@@ -284,23 +273,35 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_sell(pos)
 
 func _on_left_down(pos: Vector2) -> void:
-	if build_popup.visible:
-		build_popup.hide()
-		return
+	# 1. 轨道炮发射按钮
+	for t in towers_container.get_children():
+		if t.atk == "charge" and _railgun_btn_rect(t).has_point(pos):
+			if t.manual_fire():
+				_set_message("轨道炮·手动发射！", 1.0)
+			return
+	# 2. 右侧面板 → 拖拽部署基础塔
+	for i in TowerDefs.BASE_IDS.size():
+		if _palette_rect(i).has_point(pos):
+			deploy_dragging = true
+			deploy_id = TowerDefs.BASE_IDS[i]
+			queue_redraw()
+			return
+	# 3. 已放置的塔 → 拖拽移动
 	var t := _tower_at(pos)
 	if t != null:
-		# 长按拿起：临时释放其格子，让它跟随鼠标移动
 		dragging = true
 		drag_tower = t
 		drag_orig_cells = tower_cells[t]
 		_free_tower(t)
 		queue_redraw()
-		return
-	var cell := _world_to_cell(pos)
-	if _is_buildable(cell):
-		_open_popup(pos, cell)
 
 func _on_left_up(pos: Vector2) -> void:
+	if deploy_dragging:
+		_finish_deploy(pos)
+		deploy_dragging = false
+		deploy_id = ""
+		queue_redraw()
+		return
 	if not dragging or drag_tower == null:
 		dragging = false
 		drag_tower = null
@@ -309,7 +310,7 @@ func _on_left_up(pos: Vector2) -> void:
 	var moving := drag_tower
 	drag_tower = null
 	var size := TowerDefs.footprint(moving.id)
-	# 落在另一座塔上 → 尝试合成
+	# 落在另一座塔上 → 合成
 	var target := _tower_at(pos)
 	if target != null and target != moving:
 		var res := TowerDefs.fuse(moving.id, target.id)
@@ -319,14 +320,11 @@ func _on_left_up(pos: Vector2) -> void:
 			return
 		else:
 			_set_message("无法合成：需同级且配方存在（三级已封顶）。", 2.0)
-	# 原地轻点（没拖走）→ 轨道炮手动发射
+	# 原地放回 / 移动到新位置
 	if target == null and _world_to_cell(pos) in drag_orig_cells:
-		if moving.manual_fire():
-			_set_message("轨道炮·手动发射！", 1.2)
 		_reoccupy(moving, drag_orig_cells)
 		queue_redraw()
 		return
-	# 落在空地 → 移动到新位置；放不下则退回原位
 	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 	if _can_place(anchor, size):
 		_reoccupy(moving, _footprint_cells(anchor, size))
@@ -334,33 +332,12 @@ func _on_left_up(pos: Vector2) -> void:
 		_reoccupy(moving, drag_orig_cells)
 	queue_redraw()
 
-func _reoccupy(t: Tower, cells: Array) -> void:
-	t.position = _cells_center(cells)
-	for c in cells:
-		occupied_cells[c] = t
-	tower_cells[t] = cells
-
-func _open_popup(pos: Vector2, cell: Vector2i) -> void:
-	build_cell = cell
-	build_popup.position = Vector2(clampf(pos.x - 150, 4, 976), clampf(pos.y + 16, 84, 640))
-	# 刷新按钮可用性
-	var hb := build_popup.get_child(0)
-	var i := 0
-	for tid in TowerDefs.BASE_IDS:
-		var btn: Button = hb.get_child(i)
-		btn.disabled = GameState.gold < int(TowerDefs.get_def(tid)["cost"])
-		i += 1
-	build_popup.show()
-
-func _on_choose_build(tid: String) -> void:
-	build_popup.hide()
-	_place_new(tid, build_cell)
-
-func _place_new(tid: String, center_cell: Vector2i) -> void:
+func _finish_deploy(pos: Vector2) -> void:
+	var tid := deploy_id
 	var size := TowerDefs.footprint(tid)
-	var anchor := center_cell - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 	if not _can_place(anchor, size):
-		_set_message("这里放不下 %s（%d格），换个位置。" % [TowerDefs.name_of(tid), _cells_count(tid)], 2.0)
+		_set_message("放不下，换个位置。", 2.0)
 		return
 	var cost := int(TowerDefs.get_def(tid)["cost"])
 	if not GameState.spend_gold(cost):
@@ -369,7 +346,13 @@ func _place_new(tid: String, center_cell: Vector2i) -> void:
 	_spawn_tower(tid, anchor, size, true)
 	_set_message("")
 
-func _spawn_tower(tid: String, anchor: Vector2i, size: Vector2i, validate: bool) -> Tower:
+func _reoccupy(t: Tower, cells: Array) -> void:
+	t.position = _cells_center(cells)
+	for c in cells:
+		occupied_cells[c] = t
+	tower_cells[t] = cells
+
+func _spawn_tower(tid: String, anchor: Vector2i, size: Vector2i, _validate: bool) -> Tower:
 	var cells := _footprint_cells(anchor, size)
 	var t := Tower.new()
 	t.setup(tid)
@@ -386,7 +369,6 @@ func _spawn_tower(tid: String, anchor: Vector2i, size: Vector2i, validate: bool)
 func _do_merge(a: Tower, b: Tower, res: String) -> void:
 	var anchor: Vector2i = (tower_cells[b] as Array)[0]
 	var size := TowerDefs.footprint(res)
-	# 锚点夹到边界内
 	anchor.x = clampi(anchor.x, 0, COLS - size.x)
 	anchor.y = clampi(anchor.y, 0, ROWS - size.y)
 	_free_tower(a)
@@ -405,8 +387,6 @@ func _free_tower(t: Tower) -> void:
 	tower_cells.erase(t)
 
 func _try_sell(pos: Vector2) -> void:
-	if build_popup.visible:
-		build_popup.hide()
 	var t := _tower_at(pos)
 	if t == null:
 		return
@@ -439,10 +419,6 @@ func _cells_center(cells: Array) -> Vector2:
 		sum += _cell_center(c)
 	return sum / float(cells.size())
 
-func _cells_count(tid: String) -> int:
-	var s := TowerDefs.footprint(tid)
-	return s.x * s.y
-
 func _is_buildable(cell: Vector2i) -> bool:
 	if cell.x < 0 or cell.y < 0 or cell.x >= COLS or cell.y >= ROWS:
 		return false
@@ -462,16 +438,21 @@ func _dist_point_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var t: float = 0.0 if ab.length_squared() == 0.0 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
 	return p.distance_to(a + ab * t)
 
+func _palette_rect(i: int) -> Rect2:
+	return Rect2(PAL_X, PAL_Y0 + i * PAL_GAP, PAL_W, PAL_H)
+
+func _in_palette(point: Vector2) -> bool:
+	for i in TowerDefs.BASE_IDS.size():
+		if _palette_rect(i).has_point(point):
+			return true
+	return false
+
+func _railgun_btn_rect(t: Tower) -> Rect2:
+	return Rect2(t.global_position + Vector2(-34, -60), Vector2(68, 22))
+
 func _set_message(t: String, timeout: float = 0.0) -> void:
 	message_label.text = t
 	_msg_timeout = timeout
-
-func _refresh_popup_buttons() -> void:
-	var hb := build_popup.get_child(0)
-	var i := 0
-	for tid in TowerDefs.BASE_IDS:
-		(hb.get_child(i) as Button).disabled = GameState.gold < int(TowerDefs.get_def(tid)["cost"])
-		i += 1
 
 # ── 绘制 ──
 func _draw() -> void:
@@ -480,37 +461,82 @@ func _draw() -> void:
 	draw_polyline(waypoints, road_color, 40.0)
 	draw_circle(waypoints[0], 15.0, Color(0.7, 0.3, 0.3))
 
-	if dragging and drag_tower != null and is_instance_valid(drag_tower):
-		var mp := get_global_mouse_position()
+	var mp := get_global_mouse_position()
+	# 部署预览（从面板拖出）
+	if deploy_dragging:
+		var size := TowerDefs.footprint(deploy_id)
+		var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+		var afford := GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
+		var ok := _can_place(anchor, size) and afford
+		_draw_cells(_footprint_cells(anchor, size), Color(0.4, 0.9, 0.5) if ok else Color(0.9, 0.3, 0.3))
+	# 移动已放置塔
+	elif dragging and drag_tower != null and is_instance_valid(drag_tower):
 		var size := TowerDefs.footprint(drag_tower.id)
 		var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 		var tgt := _tower_at(mp)
 		if tgt != null and tgt != drag_tower:
-			# 悬停在另一座塔上：绿圈可合成 / 红圈不可
-			var ok := TowerDefs.fuse(drag_tower.id, tgt.id) != ""
-			draw_arc(tgt.global_position, 28.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if ok else Color(1, 0.3, 0.3), 3.0)
+			var canf := TowerDefs.fuse(drag_tower.id, tgt.id) != ""
+			draw_arc(tgt.global_position, 30.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if canf else Color(1, 0.3, 0.3), 3.0)
 		else:
-			# 塔触碰到的可放置格子亮起（绿=可放/红=不可）
-			var placeable := _can_place(anchor, size)
-			var col := Color(0.4, 0.9, 0.5) if placeable else Color(0.9, 0.3, 0.3)
-			for c in _footprint_cells(anchor, size):
-				var rr := Rect2(Vector2(c.x * CELL, c.y * CELL) + Vector2(2, 2), Vector2(CELL - 4, CELL - 4))
-				draw_rect(rr, Color(col.r, col.g, col.b, 0.2))
-				draw_rect(rr, col, false, 2.0)
-	elif not build_popup.visible:
-		# 悬停时才显示当前格（绿=可建，红=不可）
-		if hover_cell.x >= 0 and hover_cell.y >= 0 and hover_cell.x < COLS and hover_cell.y < ROWS:
-			var center := _cell_center(hover_cell)
-			if _tower_at(center) == null:
-				var col := Color(0.4, 0.9, 0.5, 0.5) if _is_buildable(hover_cell) else Color(0.9, 0.3, 0.3, 0.4)
-				var r := Rect2(Vector2(hover_cell.x * CELL, hover_cell.y * CELL) + Vector2(2, 2), Vector2(CELL - 4, CELL - 4))
-				draw_rect(r, Color(col.r, col.g, col.b, 0.15))
-				draw_rect(r, col, false, 2.0)
+			_draw_cells(_footprint_cells(anchor, size), Color(0.4, 0.9, 0.5) if _can_place(anchor, size) else Color(0.9, 0.3, 0.3))
+	else:
+		# 悬停：可建格高亮 + 塔名提示
+		var ht := _tower_at(mp)
+		if ht != null:
+			_draw_tower_name(ht)
+		elif hover_cell.x >= 0 and hover_cell.y >= 0 and hover_cell.x < COLS and hover_cell.y < ROWS and not _in_palette(mp):
+			var col := Color(0.4, 0.9, 0.5, 0.6) if _is_buildable(hover_cell) else Color(0.9, 0.3, 0.3, 0.4)
+			var rr := Rect2(Vector2(hover_cell.x * CELL, hover_cell.y * CELL) + Vector2(2, 2), Vector2(CELL - 4, CELL - 4))
+			draw_rect(rr, Color(col.r, col.g, col.b, 0.15))
+			draw_rect(rr, col, false, 2.0)
+
+	# 轨道炮发射按钮
+	for t in towers_container.get_children():
+		if t.atk == "charge":
+			_draw_railgun_button(t)
+
+	_draw_palette()
+
+func _draw_cells(cells: Array, col: Color) -> void:
+	for c in cells:
+		var rr := Rect2(Vector2(c.x * CELL, c.y * CELL) + Vector2(2, 2), Vector2(CELL - 4, CELL - 4))
+		draw_rect(rr, Color(col.r, col.g, col.b, 0.22))
+		draw_rect(rr, col, false, 2.0)
+
+func _draw_tower_name(t: Tower) -> void:
+	var nm := TowerDefs.name_of(t.id)
+	var w := float(nm.length() * 15 + 16)
+	var box := Rect2(t.global_position + Vector2(-w / 2.0, -42.0), Vector2(w, 22.0))
+	draw_rect(box, Color(0, 0, 0, 0.7))
+	draw_string(_font, box.position + Vector2(8, 16), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 0.85))
+
+func _draw_railgun_button(t: Tower) -> void:
+	var rect := _railgun_btn_rect(t)
+	var ratio: float = t.charge_ratio()
+	draw_rect(rect, Color(0.15, 0.12, 0.05, 0.9))
+	draw_rect(Rect2(rect.position, Vector2(rect.size.x * ratio, rect.size.y)), Color(0.5, 0.35, 0.1, 0.8))
+	draw_rect(rect, Color(1, 0.9, 0.4) if ratio >= 1.0 else Color(0.8, 0.7, 0.4), false, 2.0)
+	draw_string(_font, rect.position + Vector2(6, 16), "发射 %d%%" % int(ratio * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 0.7))
+
+func _draw_palette() -> void:
+	for i in TowerDefs.BASE_IDS.size():
+		var tid: String = TowerDefs.BASE_IDS[i]
+		var d := TowerDefs.get_def(tid)
+		var rect := _palette_rect(i)
+		var afford := GameState.gold >= int(d["cost"])
+		draw_rect(rect, Color(0.12, 0.14, 0.18, 0.92))
+		draw_rect(rect, Color(0.9, 0.85, 0.4) if afford else Color(0.4, 0.4, 0.45), false, 2.0)
+		# 迷你猪 + 武器色
+		var cc := rect.position + Vector2(rect.size.x / 2.0, 26.0)
+		draw_circle(cc, 13.0, Color(0.96, 0.66, 0.74) if afford else Color(0.5, 0.45, 0.48))
+		draw_circle(cc + Vector2(0, -6), 4.0, TowerDefs.color_of(tid))
+		var nm: String = d["n"]
+		draw_string(_font, rect.position + Vector2(6, 54), nm, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8, 13, Color.WHITE if afford else Color(0.6, 0.6, 0.6))
+		draw_string(_font, rect.position + Vector2(6, 70), "%d金 拖动部署" % int(d["cost"]), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8, 11, Color(1, 0.9, 0.5) if afford else Color(0.6, 0.5, 0.4))
 
 # ── 仅供无头验证 ──
 func _run_autoplay() -> void:
 	GameState.add_gold(20000)
-	# 强制铺设各类攻击原型的塔，验证 beam/domain/mine/charge/snipe/aura/mark/link/proj 均无报错
 	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun", "anti_mat",
 		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB",
 		"barrage", "burst_gl", "gl_array", "EE"]
@@ -519,11 +545,10 @@ func _run_autoplay() -> void:
 		var size := TowerDefs.footprint(tid)
 		_spawn_tower(tid, Vector2i(col, 11), size, false)
 		col += maxi(2, size.x + 1)
-		if col > COLS - 3:
+		if col > COLS - 4:
 			col = 2
-	# 测试拖拽合成产物（L+L→聚焦激光，beam 二级）
-	var a := _spawn_tower("L", Vector2i(2, 14), TowerDefs.footprint("L"), false)
-	var b := _spawn_tower("L", Vector2i(6, 14), TowerDefs.footprint("L"), false)
+	var a := _spawn_tower("L", Vector2i(2, 15), TowerDefs.footprint("L"), false)
+	var b := _spawn_tower("L", Vector2i(4, 15), TowerDefs.footprint("L"), false)
 	_do_merge(a, b, TowerDefs.fuse("L", "L"))
 	print("[AUTOPLAY] towers=", towers_container.get_child_count(), " merge L+L=", TowerDefs.fuse("L", "L"))
 	started = true
