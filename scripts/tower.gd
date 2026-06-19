@@ -176,16 +176,28 @@ func _dist_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 # ── 激光束 ──
 func _do_beam(delta: float) -> void:
 	_beam_pts = []
-	var n := 2 if id == "LL" else 1   # 聚焦激光：同时2束打2个敌人
-	var targets := _nearest_n(n)
-	if targets.is_empty():
-		_focus_target = null
-		_focus_t = 0.0
-		queue_redraw()
-		return
+	var burst := id == "beam_burst"
+	var targets: Array
+	if burst:
+		# 锁定单一目标，持续照射累计聚焦时间
+		if _focus_target == null or not is_instance_valid(_focus_target) \
+				or _focus_target.is_queued_for_deletion() \
+				or global_position.distance_to(_focus_target.global_position) > range_r:
+			_focus_target = _find_nearest()
+			_focus_t = 0.0
+		if _focus_target == null:
+			queue_redraw()
+			return
+		targets = [_focus_target]
+	else:
+		targets = _nearest_n(2 if id == "LL" else 1)   # 聚焦激光：2束打2敌
+		if targets.is_empty():
+			queue_redraw()
+			return
 	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult()
 	_cooldown -= delta
-	var do_debuff := debuff and _cooldown <= 0.0
+	# 爆裂炮激光阶段不附元素，只有爆炸那一下才附
+	var do_debuff := debuff and not burst and _cooldown <= 0.0
 	if do_debuff:
 		_cooldown = 0.4
 	for tgt in targets:
@@ -203,8 +215,11 @@ func _do_beam(delta: float) -> void:
 			far = e.global_position
 			hits += 1
 		_beam_pts.append([global_position, far if hits > 0 else global_position + dirv * range_r])
-	if id == "beam_burst":
-		_beam_burst_focus(delta, targets[0])
+	if burst:
+		_focus_t += delta
+		if _focus_t >= 3.0:
+			_focus_t = 0.0
+			_beam_burst_explode(_focus_target)
 	queue_redraw()
 
 func _beam_debuff(e: Enemy) -> void:
@@ -213,31 +228,25 @@ func _beam_debuff(e: Enemy) -> void:
 	else:
 		e.apply_debuff("burn", damage * BEAM_DPS_SCALE * 0.3, 1.2)
 
-# 光束爆裂炮：持续照射同一目标3秒触发范围爆炸（几率附带元素）
-func _beam_burst_focus(delta: float, tgt: Enemy) -> void:
-	if tgt == _focus_target and is_instance_valid(tgt):
-		_focus_t += delta
-	else:
-		_focus_target = tgt
-		_focus_t = 0.0
-	if _focus_t < 3.0:
+# 光束爆裂炮：聚焦3秒后的范围爆炸（可视化 + 几率附元素）
+func _beam_burst_explode(tgt: Enemy) -> void:
+	if tgt == null or not is_instance_valid(tgt):
 		return
-	_focus_t = 0.0
 	var pos := tgt.global_position
-	var rad := maxf(splash, 80.0)
+	var rad := maxf(splash, 110.0)
 	if projectiles_parent != null:
 		var boom := Boom.new()
 		boom.radius = rad
-		boom.color = color
+		boom.color = Color(1.0, 0.7, 0.3)
 		boom.global_position = pos
 		projectiles_parent.add_child(boom)
-	var burst := damage * BEAM_DPS_SCALE * 2.0 * _catalyst_mult()
+	var burst_dmg := damage * BEAM_DPS_SCALE * 3.0 * _catalyst_mult()
 	for e in _enemies():
 		if e.is_queued_for_deletion():
 			continue
 		if pos.distance_to(e.global_position) <= rad + e.radius:
-			e.take_damage(burst, ignore_armor)
-			if randf() < 0.5:
+			e.take_damage(burst_dmg, ignore_armor)
+			if randf() < 0.6:
 				_beam_debuff(e)
 
 # ── 棱镜折射分裂 ──
@@ -470,7 +479,7 @@ func _do_ring(delta: float) -> void:
 		return
 	if projectiles_parent != null:
 		var r := Ring.new()
-		r.max_radius = minf(range_r, 180.0)
+		r.max_radius = range_r   # 圆环范围 = 攻击距离
 		r.damage = damage * _catalyst_mult()
 		r.global_position = global_position
 		projectiles_parent.add_child(r)

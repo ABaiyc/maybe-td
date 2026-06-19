@@ -53,6 +53,15 @@ var drag_orig_cells: Array = []
 # 从右侧面板拖拽部署
 var deploy_dragging := false
 var deploy_id := ""
+var deploy_free := false
+
+# 开发者作弊（按 C 开关）：直接放置任意塔，无需合成、无需金币
+var cheat_on := false
+var cheat_ids: Array = []
+const CHEAT_X := 8.0
+const CHEAT_Y := 110.0
+const CHEAT_CELL := 30.0
+const CHEAT_COLS := 5
 
 # HUD
 var gold_label: Label
@@ -74,6 +83,7 @@ func _ready() -> void:
 	_build_king()
 	_compute_blocked()
 	_build_hud()
+	cheat_ids = TowerDefs.ids_by_tier(1) + TowerDefs.ids_by_tier(2) + TowerDefs.ids_by_tier(3)
 	GameState.reset((level["waves"] as Array).size())
 	GameState.changed.connect(_refresh_hud)
 	GameState.game_over.connect(_on_game_over)
@@ -156,6 +166,7 @@ func _refresh_hud() -> void:
 			phase_label.text = "战斗中"
 		_:
 			phase_label.text = "结算"
+	queue_redraw()  # 金币等状态变化时重绘，使面板可建选项实时亮起
 
 func _on_start() -> void:
 	if started:
@@ -257,9 +268,17 @@ func _on_game_over(won: bool) -> void:
 
 # ── 输入 ──
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
-		get_tree().reload_current_scene()
-		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_R:
+			get_tree().reload_current_scene()
+			return
+		if event.keycode == KEY_C:
+			cheat_on = not cheat_on
+			if cheat_on:
+				GameState.add_gold(99999)
+			_set_message("作弊模式：%s（左侧网格拖塔免费放置）" % ("开" if cheat_on else "关"), 1.5)
+			queue_redraw()
+			return
 	if not GameState.running:
 		return
 	if event is InputEventMouseButton:
@@ -273,6 +292,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_sell(pos)
 
 func _on_left_down(pos: Vector2) -> void:
+	# 0. 作弊网格 → 免费拖拽部署任意塔
+	if cheat_on:
+		for i in cheat_ids.size():
+			if _cheat_rect(i).has_point(pos):
+				deploy_dragging = true
+				deploy_id = cheat_ids[i]
+				deploy_free = true
+				queue_redraw()
+				return
 	# 1. 轨道炮发射按钮
 	for t in towers_container.get_children():
 		if t.atk == "charge" and _railgun_btn_rect(t).has_point(pos):
@@ -284,6 +312,7 @@ func _on_left_down(pos: Vector2) -> void:
 		if _palette_rect(i).has_point(pos):
 			deploy_dragging = true
 			deploy_id = TowerDefs.BASE_IDS[i]
+			deploy_free = false
 			queue_redraw()
 			return
 	# 3. 已放置的塔 → 拖拽移动
@@ -300,6 +329,7 @@ func _on_left_up(pos: Vector2) -> void:
 		_finish_deploy(pos)
 		deploy_dragging = false
 		deploy_id = ""
+		deploy_free = false
 		queue_redraw()
 		return
 	if not dragging or drag_tower == null:
@@ -334,7 +364,18 @@ func _on_left_up(pos: Vector2) -> void:
 
 func _finish_deploy(pos: Vector2) -> void:
 	var tid := deploy_id
+	var free := deploy_free
 	var cost := int(TowerDefs.get_def(tid)["cost"])
+	# 作弊：直接放置任意塔（不合成）
+	if free:
+		var size0 := TowerDefs.footprint(tid)
+		var anchor0 := _world_to_cell(pos) - Vector2i((size0.x - 1) / 2, (size0.y - 1) / 2)
+		if not _can_place(anchor0, size0):
+			_set_message("放不下，换个位置。", 2.0)
+			return
+		_spawn_tower(tid, anchor0, size0, true)
+		_set_message("作弊放置 → %s" % TowerDefs.name_of(tid), 1.5)
+		return
 	# 拖到已有塔上 → 直接合成
 	var target := _tower_at(pos)
 	if target != null:
@@ -485,14 +526,14 @@ func _draw() -> void:
 	# 部署预览（从面板拖出）
 	if deploy_dragging:
 		var dtgt := _tower_at(mp)
-		if dtgt != null:
+		if dtgt != null and not deploy_free:
 			# 拖到塔上：绿圈=可合成 / 红圈=不可
 			var canf := TowerDefs.fuse(deploy_id, dtgt.id) != "" and GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
 			draw_arc(dtgt.global_position, 30.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if canf else Color(1, 0.3, 0.3), 3.0)
 		else:
 			var size := TowerDefs.footprint(deploy_id)
 			var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
-			var afford := GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
+			var afford := deploy_free or GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
 			var ok := _can_place(anchor, size) and afford
 			_draw_cells(_footprint_cells(anchor, size), Color(0.4, 0.9, 0.5) if ok else Color(0.9, 0.3, 0.3))
 	# 移动已放置塔
@@ -522,6 +563,27 @@ func _draw() -> void:
 			_draw_railgun_button(t)
 
 	_draw_palette()
+	if cheat_on:
+		_draw_cheat()
+	draw_string(_font, Vector2(8, 712), "开发版 · 按 C 切换作弊（免费放置任意塔）", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.8, 0.5))
+
+func _cheat_rect(i: int) -> Rect2:
+	var col := i % CHEAT_COLS
+	@warning_ignore("integer_division")
+	var row := i / CHEAT_COLS
+	return Rect2(CHEAT_X + col * (CHEAT_CELL + 3.0), CHEAT_Y + row * (CHEAT_CELL + 3.0), CHEAT_CELL, CHEAT_CELL)
+
+func _draw_cheat() -> void:
+	draw_string(_font, Vector2(CHEAT_X, CHEAT_Y - 6.0), "作弊·拖塔免费放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.6, 0.6))
+	for i in cheat_ids.size():
+		var tid: String = cheat_ids[i]
+		var rect := _cheat_rect(i)
+		draw_rect(rect, Color(0.1, 0.1, 0.14, 0.92))
+		draw_rect(rect, Color(0.7, 0.7, 0.85), false, 1.0)
+		var cc := rect.position + rect.size / 2.0
+		draw_circle(cc, 9.0, Color(0.95, 0.66, 0.74))
+		draw_circle(cc + Vector2(0, -4), 3.5, TowerDefs.color_of(tid))
+		draw_string(_font, rect.position + Vector2(2, rect.size.y - 2), str(int(TowerDefs.get_def(tid)["t"])), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
 func _draw_cells(cells: Array, col: Color) -> void:
 	for c in cells:
