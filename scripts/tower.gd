@@ -217,7 +217,7 @@ func _do_beam(delta: float) -> void:
 		_beam_pts.append([global_position, far if hits > 0 else global_position + dirv * range_r])
 	if burst:
 		_focus_t += delta
-		if _focus_t >= 3.0:
+		if _focus_t >= 1.0:   # 照射1秒触发爆炸
 			_focus_t = 0.0
 			_beam_burst_explode(_focus_target)
 	queue_redraw()

@@ -57,7 +57,7 @@ const TOWERS := {
 	"prism": {"n": "棱镜塔", "t": 3, "c": "LLLL", "dmg": 26.0, "rng": 320.0, "cd": 1.0, "bhv": "pierce", "pierce": 9, "splash": 0.0, "debuff": false, "col": "ff5a5a", "desc": "折射分裂：主激光命中后分裂3道小激光，再各分裂3道小小激光。"},
 	"reactor": {"n": "元素反应炉", "t": 3, "c": "EEEE", "dmg": 24.0, "rng": 170.0, "cd": 0.5, "bhv": "aoe", "pierce": 0, "splash": 150.0, "debuff": true, "col": "d65adf", "desc": "领域展开：塔周围元素领域每秒三重元素伤害。"},
 	"railgun": {"n": "轨道炮", "t": 3, "c": "BBBB", "dmg": 220.0, "rng": 700.0, "cd": 3.5, "bhv": "pierce", "pierce": 99, "splash": 0.0, "debuff": false, "col": "ffd23a", "desc": "充能巨炮：满弹一炮穿透全路径所有敌人。"},
-	"beam_burst": {"n": "光束爆裂炮", "t": 3, "c": "LLLE", "dmg": 70.0, "rng": 300.0, "cd": 1.0, "bhv": "pierce", "pierce": 4, "splash": 60.0, "debuff": true, "col": "ff7a5a", "desc": "命中引爆：照射叠满3层引发元素爆炸，范围渐增。"},
+	"beam_burst": {"n": "光束爆裂炮", "t": 3, "c": "LLLE", "dmg": 34.0, "rng": 300.0, "cd": 1.0, "bhv": "pierce", "pierce": 4, "splash": 60.0, "debuff": true, "col": "ff7a5a", "desc": "命中引爆：激光持续照射1秒引发元素爆炸，爆炸几率附元素。"},
 	"rapid_ap": {"n": "高速穿甲枪", "t": 3, "c": "LLLB", "dmg": 30.0, "rng": 280.0, "cd": 0.125, "bhv": "pierce", "pierce": 99, "splash": 0.0, "debuff": false, "col": "5ab0ff", "desc": "穿透弹幕：每秒8发穿甲弹，穿透所有敌人。"},
 	"ele_matrix": {"n": "元素矩阵", "t": 3, "c": "EEEL", "dmg": 40.0, "rng": 280.0, "cd": 0.9, "bhv": "pierce", "pierce": 5, "splash": 0.0, "debuff": true, "col": "c75adf", "desc": "多目标锁定：3道元素激光在怪群间弹射。"},
 	"barrage": {"n": "弹幕炮塔", "t": 3, "c": "EEEB", "dmg": 11.0, "rng": 230.0, "cd": 1.5, "bhv": "aoe", "pierce": 0, "splash": 70.0, "debuff": true, "col": "df6acf", "desc": "弹幕覆盖：扇形倾泻12发元素弹，每发随机元素，攻速偏慢。"},
