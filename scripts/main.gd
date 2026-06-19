@@ -56,6 +56,7 @@ var wave_label: Label
 var phase_label: Label
 var message_label: Label
 var start_button: Button
+var _msg_timeout := 0.0
 
 func _ready() -> void:
 	level = Levels.get_level(0)
@@ -195,6 +196,14 @@ func _process(delta: float) -> void:
 	elif GameState.phase == GameState.Phase.COMBAT:
 		if all_waves_spawned and _alive_enemies() == 0:
 			GameState.win()
+	# 建造弹窗按钮随金币实时刷新可用状态
+	if build_popup.visible:
+		_refresh_popup_buttons()
+	# 临时提示自动消失
+	if _msg_timeout > 0.0:
+		_msg_timeout -= delta
+		if _msg_timeout <= 0.0:
+			message_label.text = ""
 
 # ── 波次 ──
 func _start_combat() -> void:
@@ -309,7 +318,7 @@ func _on_left_up(pos: Vector2) -> void:
 			queue_redraw()
 			return
 		else:
-			_set_message("无法合成：需同级且配方存在（三级已封顶）。")
+			_set_message("无法合成：需同级且配方存在（三级已封顶）。", 2.0)
 	# 落在空地 → 移动到新位置；放不下则退回原位
 	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 	if _can_place(anchor, size):
@@ -344,11 +353,11 @@ func _place_new(tid: String, center_cell: Vector2i) -> void:
 	var size := TowerDefs.footprint(tid)
 	var anchor := center_cell - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 	if not _can_place(anchor, size):
-		_set_message("这里放不下 %s（%d格），换个位置。" % [TowerDefs.name_of(tid), _cells_count(tid)])
+		_set_message("这里放不下 %s（%d格），换个位置。" % [TowerDefs.name_of(tid), _cells_count(tid)], 2.0)
 		return
 	var cost := int(TowerDefs.get_def(tid)["cost"])
 	if not GameState.spend_gold(cost):
-		_set_message("金币不足！%s 需 %d 金。" % [TowerDefs.name_of(tid), cost])
+		_set_message("金币不足！%s 需 %d 金。" % [TowerDefs.name_of(tid), cost], 2.0)
 		return
 	_spawn_tower(tid, anchor, size, true)
 	_set_message("")
@@ -378,7 +387,7 @@ func _do_merge(a: Tower, b: Tower, res: String) -> void:
 	a.queue_free()
 	b.queue_free()
 	_spawn_tower(res, anchor, size, false)
-	_set_message("合成 → %s！" % TowerDefs.name_of(res))
+	_set_message("合成 → %s！" % TowerDefs.name_of(res), 2.0)
 
 func _free_tower(t: Tower) -> void:
 	if not tower_cells.has(t):
@@ -401,7 +410,7 @@ func _try_sell(pos: Vector2) -> void:
 	_free_tower(t)
 	t.queue_free()
 	queue_redraw()
-	_set_message("拆除 %s，返还 %d 金。" % [TowerDefs.name_of(t.id), refund])
+	_set_message("拆除 %s，返还 %d 金。" % [TowerDefs.name_of(t.id), refund], 2.0)
 
 # ── 网格工具 ──
 func _world_to_cell(p: Vector2) -> Vector2i:
@@ -446,8 +455,16 @@ func _dist_point_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var t: float = 0.0 if ab.length_squared() == 0.0 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
 	return p.distance_to(a + ab * t)
 
-func _set_message(t: String) -> void:
+func _set_message(t: String, timeout: float = 0.0) -> void:
 	message_label.text = t
+	_msg_timeout = timeout
+
+func _refresh_popup_buttons() -> void:
+	var hb := build_popup.get_child(0)
+	var i := 0
+	for tid in TowerDefs.BASE_IDS:
+		(hb.get_child(i) as Button).disabled = GameState.gold < int(TowerDefs.get_def(tid)["cost"])
+		i += 1
 
 # ── 绘制 ──
 func _draw() -> void:
@@ -488,7 +505,8 @@ func _run_autoplay() -> void:
 	GameState.add_gold(20000)
 	# 强制铺设各类攻击原型的塔，验证 beam/domain/mine/charge/snipe/aura/mark/link/proj 均无报错
 	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun", "anti_mat",
-		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB"]
+		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB",
+		"barrage", "burst_gl", "gl_array", "EE"]
 	var col := 2
 	for tid in adv:
 		var size := TowerDefs.footprint(tid)

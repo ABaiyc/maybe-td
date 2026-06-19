@@ -53,6 +53,8 @@ func setup(tower_id: String) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	if not GameState.running:
+		return
 	match atk:
 		"beam": _do_beam(delta)
 		"domain": _do_domain(delta)
@@ -294,6 +296,16 @@ func _fire_projectile() -> bool:
 	var t := _find_nearest()
 	if t == null or projectiles_parent == null:
 		return false
+	# 多发/分裂的特殊弹道塔（忠实还原设计稿）
+	match id:
+		"barrage": _spawn_fan(t, 12, 82.0)        # 弹幕炮塔：扇形12发随机元素
+		"EE": _spawn_fan(t, 3, 26.0)              # 元素风暴：火/冰/雷三球
+		"gl_array": _spawn_fan(t, 6, 55.0)        # 元素榴弹阵列：齐射6发
+		"burst_gl": _spawn_aoe(t.global_position, splash, damage, 3)  # 爆裂榴弹炮：分裂3小炸弹
+		_: _spawn_one(t)
+	return true
+
+func _spawn_one(t: Enemy) -> void:
 	var p := Projectile.new()
 	p.damage = damage * _catalyst_mult()
 	p.pierce = pierce
@@ -316,7 +328,41 @@ func _fire_projectile() -> bool:
 			p.target = t
 			p.speed = 520.0
 	projectiles_parent.add_child(p)
-	return true
+
+## 扇形齐射：朝目标方向铺开 count 发元素弹，每发随机元素
+func _spawn_fan(t: Enemy, count: int, spread_deg: float) -> void:
+	var base := t.global_position - global_position
+	var dist := clampf(base.length(), 90.0, range_r)
+	var dir := base.normalized() if base.length() > 1.0 else Vector2.RIGHT
+	var mult := _catalyst_mult()
+	for i in count:
+		var frac := 0.0 if count <= 1 else (float(i) / float(count - 1) - 0.5)
+		var d := dir.rotated(deg_to_rad(spread_deg) * frac)
+		var p := Projectile.new()
+		p.mode = "aoe"
+		p.damage = damage * mult
+		p.splash = maxf(splash * 0.7, 36.0)
+		p.debuff = true
+		p.ignore_armor = ignore_armor
+		p.color = color
+		p.global_position = global_position
+		p.dest = global_position + d * dist
+		p.speed = 330.0
+		projectiles_parent.add_child(p)
+
+func _spawn_aoe(dest: Vector2, sp: float, dmg: float, split: int) -> void:
+	var p := Projectile.new()
+	p.mode = "aoe"
+	p.damage = dmg * _catalyst_mult()
+	p.splash = sp
+	p.debuff = debuff
+	p.ignore_armor = ignore_armor
+	p.color = color
+	p.split = split
+	p.global_position = global_position
+	p.dest = dest
+	p.speed = 340.0
+	projectiles_parent.add_child(p)
 
 # ── 绘制 ──
 func _draw() -> void:

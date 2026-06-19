@@ -10,6 +10,8 @@ var owner_tower: Node = null
 var _arm: float = 0.25  # 布置后短暂引信延迟
 
 func _process(delta: float) -> void:
+	if not GameState.running:
+		return
 	if _arm > 0.0:
 		_arm -= delta
 		queue_redraw()

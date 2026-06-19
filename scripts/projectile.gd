@@ -13,6 +13,8 @@ var splash: float = 0.0
 var debuff: bool = false
 var ignore_armor: float = 0.0
 var color: Color = Color(1, 0.85, 0.3)
+var split: int = 0          # 爆炸后分裂出的小炸弹数
+var bomblet: bool = false   # 是否为分裂出的小炸弹（更小）
 
 var target: Enemy = null          # single 用
 var dir: Vector2 = Vector2.RIGHT  # pierce 用
@@ -21,6 +23,8 @@ var _hit := {}                    # pierce 已命中集合
 var _life := 2.5
 
 func _process(delta: float) -> void:
+	if not GameState.running:
+		return
 	_life -= delta
 	if _life <= 0.0:
 		queue_free()
@@ -78,7 +82,32 @@ func _explode() -> void:
 			e.take_damage(damage, ignore_armor)
 			if debuff:
 				_random_debuff(e)
+	_spawn_boom()
+	# 爆裂榴弹炮：分裂出可见的小炸弹，二次爆炸
+	if split > 0 and get_parent() != null:
+		for i in split:
+			var b := Projectile.new()
+			b.mode = "aoe"
+			b.damage = damage * 0.6
+			b.splash = splash * 0.7
+			b.debuff = debuff
+			b.ignore_armor = ignore_armor
+			b.color = color
+			b.bomblet = true
+			b.global_position = global_position
+			b.dest = global_position + Vector2.RIGHT.rotated(randf() * TAU) * randf_range(45.0, 95.0)
+			b.speed = 300.0
+			get_parent().add_child(b)
 	queue_free()
+
+func _spawn_boom() -> void:
+	if get_parent() == null:
+		return
+	var boom := Boom.new()
+	boom.radius = maxf(splash, 30.0)
+	boom.color = color
+	boom.global_position = global_position
+	get_parent().add_child(boom)
 
 func _random_debuff(e: Enemy) -> void:
 	match randi() % 3:
@@ -88,7 +117,7 @@ func _random_debuff(e: Enemy) -> void:
 
 func _draw() -> void:
 	if mode == "aoe":
-		draw_circle(Vector2.ZERO, 7.0, color)
+		draw_circle(Vector2.ZERO, 4.0 if bomblet else 7.0, color)
 	elif mode == "pierce":
 		draw_line(Vector2.ZERO, -dir * 16.0, color, 4.0)
 		draw_circle(Vector2.ZERO, 4.0, color.lightened(0.3))

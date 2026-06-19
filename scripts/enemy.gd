@@ -48,6 +48,8 @@ func _ready() -> void:
 	add_to_group("enemies")
 
 func _process(delta: float) -> void:
+	if not GameState.running:
+		return
 	_tick_debuffs(delta)
 	if besieging:
 		_besiege(delta)
