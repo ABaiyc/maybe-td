@@ -79,6 +79,30 @@ const TOWERS := {
 
 const BASE_IDS := ["L", "E", "B"]
 
+## 攻击原型（严格对应 docs/塔设计-30种.md 的攻击方式，而非一律弹道）：
+##  beam   持续直线激光，瞄准跟随，沿线 DPS（dmg 视为 DPS）
+##  proj   弹道（具体 single/pierce/aoe 看 bhv）
+##  snipe  瞬发狙击：锁血量最高、超大射程、单发巨伤（可暴击）
+##  domain 领域：塔周围范围持续 DPS
+##  mine   布雷：无论有无敌人按频率往路径埋雷，敌人踩中爆炸
+##  charge 充能巨炮：蓄满后一道贯穿长线轰所有敌人
+##  link   塔间连线：与同类塔之间拉伤害线，敌人穿过受伤
+##  aura   被动光环：给周围塔加伤害（自身不攻击）
+##  mark   标记：给敌人挂集火标记，全体对其伤害放大
+const ATTACK := {
+	"L": "beam", "E": "proj", "B": "proj",
+	"LL": "beam", "EE": "proj", "BB": "proj", "LE": "beam", "LB": "proj", "EB": "proj",
+	"prism": "beam", "reactor": "domain", "railgun": "charge",
+	"beam_burst": "beam", "rapid_ap": "proj", "ele_matrix": "beam", "barrage": "proj",
+	"anti_mat": "snipe", "burst_gl": "proj", "plasma_field": "link", "twin_laser": "beam",
+	"precision_snipe": "snipe", "rapid_ap_chain": "proj", "mine_layer": "mine",
+	"gl_array": "proj", "emp": "proj", "laser_detonate": "proj", "catalyst": "aura",
+	"ele_ap": "proj", "omni": "proj", "tactical_mark": "mark",
+}
+
+static func attack_of(id: String) -> String:
+	return ATTACK.get(id, "proj")
+
 static func get_def(id: String) -> Dictionary:
 	return TOWERS.get(id, {})
 

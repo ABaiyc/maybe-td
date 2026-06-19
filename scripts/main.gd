@@ -40,9 +40,10 @@ var occupied_cells := {}     # Vector2i -> Tower
 var tower_cells := {}        # Tower -> Array[Vector2i]
 var hover_cell := Vector2i(-999, -999)
 
-# 拖拽合成
+# 拖拽移动/合成
 var dragging := false
 var drag_tower: Tower = null
+var drag_orig_cells: Array = []
 
 # 建造弹窗
 var build_popup: Control
@@ -181,6 +182,11 @@ func _process(delta: float) -> void:
 	if hc != hover_cell or dragging:
 		hover_cell = hc
 		queue_redraw()
+	# 拖拽中：防御塔跟随鼠标
+	if dragging and drag_tower != null and is_instance_valid(drag_tower):
+		var size := TowerDefs.footprint(drag_tower.id)
+		var anchor := hc - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+		drag_tower.position = _cells_center(_footprint_cells(anchor, size))
 	if GameState.phase == GameState.Phase.PREP and started:
 		prep_timer -= delta
 		_refresh_hud()
@@ -274,8 +280,11 @@ func _on_left_down(pos: Vector2) -> void:
 		return
 	var t := _tower_at(pos)
 	if t != null:
+		# 长按拿起：临时释放其格子，让它跟随鼠标移动
 		dragging = true
 		drag_tower = t
+		drag_orig_cells = tower_cells[t]
+		_free_tower(t)
 		queue_redraw()
 		return
 	var cell := _world_to_cell(pos)
@@ -283,18 +292,37 @@ func _on_left_down(pos: Vector2) -> void:
 		_open_popup(pos, cell)
 
 func _on_left_up(pos: Vector2) -> void:
-	if not dragging:
+	if not dragging or drag_tower == null:
+		dragging = false
+		drag_tower = null
 		return
 	dragging = false
-	var t := _tower_at(pos)
-	if t != null and t != drag_tower:
-		var res := TowerDefs.fuse(drag_tower.id, t.id)
+	var moving := drag_tower
+	drag_tower = null
+	var size := TowerDefs.footprint(moving.id)
+	# 落在另一座塔上 → 尝试合成
+	var target := _tower_at(pos)
+	if target != null and target != moving:
+		var res := TowerDefs.fuse(moving.id, target.id)
 		if res != "":
-			_do_merge(drag_tower, t, res)
+			_do_merge(moving, target, res)
+			queue_redraw()
+			return
 		else:
 			_set_message("无法合成：需同级且配方存在（三级已封顶）。")
-	drag_tower = null
+	# 落在空地 → 移动到新位置；放不下则退回原位
+	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+	if _can_place(anchor, size):
+		_reoccupy(moving, _footprint_cells(anchor, size))
+	else:
+		_reoccupy(moving, drag_orig_cells)
 	queue_redraw()
+
+func _reoccupy(t: Tower, cells: Array) -> void:
+	t.position = _cells_center(cells)
+	for c in cells:
+		occupied_cells[c] = t
+	tower_cells[t] = cells
 
 func _open_popup(pos: Vector2, cell: Vector2i) -> void:
 	build_cell = cell
@@ -331,6 +359,7 @@ func _spawn_tower(tid: String, anchor: Vector2i, size: Vector2i, validate: bool)
 	t.setup(tid)
 	t.position = _cells_center(cells)
 	t.projectiles_parent = projectiles_container
+	t.waypoints = waypoints
 	towers_container.add_child(t)
 	for c in cells:
 		occupied_cells[c] = t
@@ -429,11 +458,21 @@ func _draw() -> void:
 
 	if dragging and drag_tower != null and is_instance_valid(drag_tower):
 		var mp := get_global_mouse_position()
-		draw_line(drag_tower.global_position, mp, Color(1, 1, 1, 0.5), 3.0)
+		var size := TowerDefs.footprint(drag_tower.id)
+		var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
 		var tgt := _tower_at(mp)
 		if tgt != null and tgt != drag_tower:
+			# 悬停在另一座塔上：绿圈可合成 / 红圈不可
 			var ok := TowerDefs.fuse(drag_tower.id, tgt.id) != ""
-			draw_arc(tgt.global_position, 26.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if ok else Color(1, 0.3, 0.3), 3.0)
+			draw_arc(tgt.global_position, 28.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if ok else Color(1, 0.3, 0.3), 3.0)
+		else:
+			# 塔触碰到的可放置格子亮起（绿=可放/红=不可）
+			var placeable := _can_place(anchor, size)
+			var col := Color(0.4, 0.9, 0.5) if placeable else Color(0.9, 0.3, 0.3)
+			for c in _footprint_cells(anchor, size):
+				var rr := Rect2(Vector2(c.x * CELL, c.y * CELL) + Vector2(2, 2), Vector2(CELL - 4, CELL - 4))
+				draw_rect(rr, Color(col.r, col.g, col.b, 0.2))
+				draw_rect(rr, col, false, 2.0)
 	elif not build_popup.visible:
 		# 悬停时才显示当前格（绿=可建，红=不可）
 		if hover_cell.x >= 0 and hover_cell.y >= 0 and hover_cell.x < COLS and hover_cell.y < ROWS:
@@ -446,30 +485,22 @@ func _draw() -> void:
 
 # ── 仅供无头验证 ──
 func _run_autoplay() -> void:
-	GameState.add_gold(8000)
-	# 在若干可建造格放基础塔
-	var placed := []
-	var want := ["L", "E", "B", "B", "L", "E", "B", "B"]
-	var wi := 0
-	for cx in range(2, COLS - 2):
-		if wi >= want.size():
-			break
-		for cy in range(3, ROWS - 1):
-			var cell := Vector2i(cx, cy)
-			var tid: String = want[wi]
-			var size := TowerDefs.footprint(tid)
-			if _can_place(cell, size):
-				var cost := int(TowerDefs.get_def(tid)["cost"])
-				if GameState.spend_gold(cost):
-					placed.append(_spawn_tower(tid, cell, size, true))
-					wi += 1
-				break
-	# 测试合成：两个 B → BB
-	var bs := placed.filter(func(t): return t.id == "B")
-	if bs.size() >= 2:
-		_do_merge(bs[0], bs[1], TowerDefs.fuse("B", "B"))
-		print("[AUTOPLAY] merge B+B -> ", bs[1].id if false else TowerDefs.fuse("B", "B"))
-	print("[AUTOPLAY] placed=", placed.size(), " towers_now=", towers_container.get_child_count())
+	GameState.add_gold(20000)
+	# 强制铺设各类攻击原型的塔，验证 beam/domain/mine/charge/snipe/aura/mark/link/proj 均无报错
+	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun", "anti_mat",
+		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB"]
+	var col := 2
+	for tid in adv:
+		var size := TowerDefs.footprint(tid)
+		_spawn_tower(tid, Vector2i(col, 11), size, false)
+		col += maxi(2, size.x + 1)
+		if col > COLS - 3:
+			col = 2
+	# 测试拖拽合成产物（L+L→聚焦激光，beam 二级）
+	var a := _spawn_tower("L", Vector2i(2, 14), TowerDefs.footprint("L"), false)
+	var b := _spawn_tower("L", Vector2i(6, 14), TowerDefs.footprint("L"), false)
+	_do_merge(a, b, TowerDefs.fuse("L", "L"))
+	print("[AUTOPLAY] towers=", towers_container.get_child_count(), " merge L+L=", TowerDefs.fuse("L", "L"))
 	started = true
 	prep_timer = 1.0
 	GameState.set_phase(GameState.Phase.PREP)

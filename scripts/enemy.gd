@@ -21,6 +21,8 @@ var slow_factor: float = 1.0
 var slow_time: float = 0.0
 var burn_dps: float = 0.0
 var burn_time: float = 0.0
+var mark: float = 0.0       # 集火标记：受到伤害放大 (1+mark)
+var mark_time: float = 0.0
 
 # 围攻
 var besieging: bool = false
@@ -92,6 +94,10 @@ func _tick_debuffs(delta: float) -> void:
 	if burn_time > 0.0:
 		burn_time -= delta
 		_apply_damage(burn_dps * delta, true)
+	if mark_time > 0.0:
+		mark_time -= delta
+		if mark_time <= 0.0:
+			mark = 0.0
 
 func apply_debuff(kind: String, power: float, duration: float) -> void:
 	match kind:
@@ -105,7 +111,12 @@ func apply_debuff(kind: String, power: float, duration: float) -> void:
 
 func take_damage(d: float, ignore_armor: float = 0.0) -> void:
 	var eff_armor: float = maxf(0.0, armor - ignore_armor)
-	_apply_damage(d * (1.0 - eff_armor), false)
+	_apply_damage(d * (1.0 - eff_armor) * (1.0 + mark), false)
+
+func apply_mark(stack: float, max_mark: float, dur: float) -> void:
+	mark = minf(max_mark, mark + stack)
+	mark_time = maxf(mark_time, dur)
+	queue_redraw()
 
 func _apply_damage(amount: float, _is_dot: bool) -> void:
 	if hp <= 0.0:
