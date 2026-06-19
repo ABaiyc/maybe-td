@@ -15,6 +15,8 @@ var ignore_armor: float = 0.0
 var color: Color = Color(1, 0.85, 0.3)
 var split: int = 0          # 爆炸后分裂出的小炸弹数
 var bomblet: bool = false   # 是否为分裂出的小炸弹（更小）
+var bounces: int = 0        # 弹射剩余次数（元素矩阵）
+var _bhit := {}             # 弹射已命中集合
 
 var target: Enemy = null          # single 用
 var dir: Vector2 = Vector2.RIGHT  # pierce 用
@@ -34,6 +36,8 @@ func _process(delta: float) -> void:
 			_move_pierce(delta)
 		"aoe":
 			_move_aoe(delta)
+		"bounce":
+			_move_bounce(delta)
 		_:
 			_move_single(delta)
 
@@ -49,6 +53,42 @@ func _move_single(delta: float) -> void:
 		queue_free()
 		return
 	global_position += to_t / dist * step
+
+func _move_bounce(delta: float) -> void:
+	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion():
+		target = _next_bounce_target()
+		if target == null:
+			queue_free()
+			return
+	var to_t: Vector2 = target.global_position - global_position
+	var dist: float = to_t.length()
+	var step: float = speed * delta
+	if step >= dist - 6.0:
+		target.take_damage(damage, ignore_armor)
+		if debuff:
+			_random_debuff(target)
+		_bhit[target.get_instance_id()] = true
+		if bounces > 0:
+			bounces -= 1
+			target = _next_bounce_target()
+			if target == null:
+				queue_free()
+		else:
+			queue_free()
+		return
+	global_position += to_t / dist * step
+
+func _next_bounce_target() -> Enemy:
+	var best: Enemy = null
+	var best_d := 200.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e.is_queued_for_deletion() or _bhit.has(e.get_instance_id()):
+			continue
+		var d: float = global_position.distance_to(e.global_position)
+		if d <= best_d:
+			best_d = d
+			best = e
+	return best
 
 func _move_pierce(delta: float) -> void:
 	global_position += dir * speed * delta
@@ -121,5 +161,8 @@ func _draw() -> void:
 	elif mode == "pierce":
 		draw_line(Vector2.ZERO, -dir * 16.0, color, 4.0)
 		draw_circle(Vector2.ZERO, 4.0, color.lightened(0.3))
+	elif mode == "bounce":
+		draw_circle(Vector2.ZERO, 6.0, color)
+		draw_arc(Vector2.ZERO, 8.0, 0.0, TAU, 12, Color(1, 1, 1, 0.5), 1.5)
 	else:
 		draw_circle(Vector2.ZERO, 5.0, color)

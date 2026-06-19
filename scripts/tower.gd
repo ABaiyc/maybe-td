@@ -32,6 +32,12 @@ var _beam_pts: Array = []
 var _link_pts: Array = []
 var _prism_segs: Array = []
 var _target: Enemy = null
+var _focus_target: Enemy = null   # 光束爆裂炮聚焦目标
+var _focus_t: float = 0.0
+var _ramp: int = 0                 # 机枪塔越打越快层数
+var _since_fire: float = 0.0
+var _ring_cd: float = 0.0          # 双子激光塔
+var _ring_count: int = 0
 
 func _ready() -> void:
 	add_to_group("towers")
@@ -56,9 +62,13 @@ func setup(tower_id: String) -> void:
 func _process(delta: float) -> void:
 	if not GameState.running:
 		return
+	_since_fire += delta
+	if _since_fire > 3.0 and _ramp > 0:
+		_ramp = 0  # 机枪塔停火3秒重置攻速
 	match atk:
 		"beam": _do_beam(delta)
 		"split": _do_prism(delta)
+		"ring": _do_ring(delta)
 		"domain": _do_domain(delta)
 		"mine": _do_mine(delta)
 		"charge": _do_charge(delta)
@@ -80,7 +90,40 @@ func _do_cd(delta: float, fn: Callable) -> void:
 	_cooldown -= delta
 	if _cooldown <= 0.0:
 		if fn.call():
-			_cooldown = fire_interval
+			_cooldown = _fire_cd()
+
+func _fire_cd() -> float:
+	if id == "BB":
+		return maxf(0.1, fire_interval - _ramp * 0.025)  # 越打越快，下限0.1s
+	return fire_interval
+
+func _nearest_n(n: int) -> Array:
+	var arr: Array = []
+	for e in _enemies():
+		if e.is_queued_for_deletion():
+			continue
+		var d: float = global_position.distance_to(e.global_position)
+		if d <= range_r:
+			arr.append([d, e])
+	arr.sort_custom(func(a, b): return a[0] < b[0])
+	var out: Array = []
+	for i in mini(n, arr.size()):
+		out.append(arr[i][1])
+	return out
+
+func _enemies_along(dirv: Vector2) -> Array:
+	var along: Array = []
+	for e in _enemies():
+		if e.is_queued_for_deletion():
+			continue
+		var rel: Vector2 = e.global_position - global_position
+		var proj: float = rel.dot(dirv)
+		if proj < 0.0 or proj > range_r:
+			continue
+		if (rel - dirv * proj).length() <= e.radius + 7.0:
+			along.append([proj, e])
+	along.sort_custom(func(a, b): return a[0] < b[0])
+	return along
 
 func _catalyst_mult() -> float:
 	var m := 1.0
@@ -132,44 +175,70 @@ func _dist_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 
 # ── 激光束 ──
 func _do_beam(delta: float) -> void:
-	if _target == null or not is_instance_valid(_target) or _target.is_queued_for_deletion() \
-			or global_position.distance_to(_target.global_position) > range_r:
-		_target = _find_nearest()
 	_beam_pts = []
-	if _target == null:
+	var n := 2 if id == "LL" else 1   # 聚焦激光：同时2束打2个敌人
+	var targets := _nearest_n(n)
+	if targets.is_empty():
+		_focus_target = null
+		_focus_t = 0.0
 		queue_redraw()
 		return
-	var dirv := (_target.global_position - global_position)
-	dirv = Vector2.RIGHT if dirv.length() < 1.0 else dirv.normalized()
-	var along: Array = []
-	for e in _enemies():
-		if e.is_queued_for_deletion():
-			continue
-		var rel: Vector2 = e.global_position - global_position
-		var proj: float = rel.dot(dirv)
-		if proj < 0.0 or proj > range_r:
-			continue
-		if (rel - dirv * proj).length() <= e.radius + 7.0:
-			along.append([proj, e])
-	along.sort_custom(func(a, b): return a[0] < b[0])
 	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult()
 	_cooldown -= delta
 	var do_debuff := debuff and _cooldown <= 0.0
 	if do_debuff:
 		_cooldown = 0.4
-	var far := global_position
-	var hits := 0
-	for pair in along:
-		if hits > pierce:
-			break
-		var e: Enemy = pair[1]
-		e.take_damage(dps * delta, ignore_armor)
-		if do_debuff:
-			e.apply_debuff("slow", 0.6, 1.0) if randf() < 0.5 else e.apply_debuff("burn", dps * 0.3, 1.2)
-		far = e.global_position
-		hits += 1
-	_beam_pts = [global_position, far if hits > 0 else global_position + dirv * range_r]
+	for tgt in targets:
+		var dirv: Vector2 = tgt.global_position - global_position
+		dirv = Vector2.RIGHT if dirv.length() < 1.0 else dirv.normalized()
+		var far := global_position
+		var hits := 0
+		for pair in _enemies_along(dirv):
+			if hits > pierce:
+				break
+			var e: Enemy = pair[1]
+			e.take_damage(dps * delta, ignore_armor)
+			if do_debuff:
+				_beam_debuff(e)
+			far = e.global_position
+			hits += 1
+		_beam_pts.append([global_position, far if hits > 0 else global_position + dirv * range_r])
+	if id == "beam_burst":
+		_beam_burst_focus(delta, targets[0])
 	queue_redraw()
+
+func _beam_debuff(e: Enemy) -> void:
+	if randf() < 0.5:
+		e.apply_debuff("slow", 0.6, 1.0)
+	else:
+		e.apply_debuff("burn", damage * BEAM_DPS_SCALE * 0.3, 1.2)
+
+# 光束爆裂炮：持续照射同一目标3秒触发范围爆炸（几率附带元素）
+func _beam_burst_focus(delta: float, tgt: Enemy) -> void:
+	if tgt == _focus_target and is_instance_valid(tgt):
+		_focus_t += delta
+	else:
+		_focus_target = tgt
+		_focus_t = 0.0
+	if _focus_t < 3.0:
+		return
+	_focus_t = 0.0
+	var pos := tgt.global_position
+	var rad := maxf(splash, 80.0)
+	if projectiles_parent != null:
+		var boom := Boom.new()
+		boom.radius = rad
+		boom.color = color
+		boom.global_position = pos
+		projectiles_parent.add_child(boom)
+	var burst := damage * BEAM_DPS_SCALE * 2.0 * _catalyst_mult()
+	for e in _enemies():
+		if e.is_queued_for_deletion():
+			continue
+		if pos.distance_to(e.global_position) <= rad + e.radius:
+			e.take_damage(burst, ignore_armor)
+			if randf() < 0.5:
+				_beam_debuff(e)
 
 # ── 棱镜折射分裂 ──
 func _do_prism(delta: float) -> void:
@@ -356,8 +425,61 @@ func _fire_projectile() -> bool:
 		"EE": _spawn_fan(t, 3, 26.0)              # 元素风暴：火/冰/雷三球
 		"gl_array": _spawn_fan(t, 6, 55.0)        # 元素榴弹阵列：齐射6发
 		"burst_gl": _spawn_aoe(t.global_position, splash, damage, 3)  # 爆裂榴弹炮：分裂3小炸弹
+		"ele_matrix": _fire_ele_matrix()          # 元素矩阵：3道弹射激光
+		"BB":                                     # 机枪塔：双管并排 + 越打越快
+			_spawn_double(t)
+			_ramp = mini(_ramp + 1, 8)
+			_since_fire = 0.0
 		_: _spawn_one(t)
 	return true
+
+func _spawn_double(t: Enemy) -> void:
+	var dir := (t.global_position - global_position).normalized()
+	var perp := Vector2(-dir.y, dir.x) * 7.0
+	for s in [-1.0, 1.0]:
+		var p := Projectile.new()
+		p.mode = "single"
+		p.target = t
+		p.damage = damage * _catalyst_mult()
+		p.ignore_armor = ignore_armor
+		p.color = color
+		p.speed = 560.0
+		p.global_position = global_position + perp * s
+		projectiles_parent.add_child(p)
+
+func _fire_ele_matrix() -> void:
+	for tgt in _nearest_n(3):
+		var p := Projectile.new()
+		p.mode = "bounce"
+		p.target = tgt
+		p.bounces = 2
+		p.damage = damage * _catalyst_mult()
+		p.debuff = true
+		p.color = color
+		p.speed = 600.0
+		p.global_position = global_position
+		projectiles_parent.add_child(p)
+
+# ── 双子激光塔：扩散收缩伤害圆环，连续2发后2s小cd ──
+func _do_ring(delta: float) -> void:
+	_ring_cd -= delta
+	if _ring_cd > 0.0:
+		return
+	if _find_nearest() == null:
+		_ring_cd = 0.3
+		return
+	if projectiles_parent != null:
+		var r := Ring.new()
+		r.max_radius = minf(range_r, 180.0)
+		r.damage = damage * _catalyst_mult()
+		r.global_position = global_position
+		projectiles_parent.add_child(r)
+	_ring_count += 1
+	if _ring_count >= 2:
+		_ring_count = 0
+		_ring_cd = 2.0
+	else:
+		_ring_cd = 0.5
 
 func _spawn_one(t: Enemy) -> void:
 	var p := Projectile.new()
@@ -426,10 +548,11 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, splash, Color(color.r, color.g, color.b, 0.10))
 		draw_arc(Vector2.ZERO, splash, 0.0, TAU, 48, Color(color.r, color.g, color.b, 0.4), 2.0)
 	# 激光束
-	if atk == "beam" and _beam_pts.size() == 2:
+	if atk == "beam":
 		var w := 3.0 + tier * 1.5
-		draw_line(to_local(_beam_pts[0]), to_local(_beam_pts[1]), Color(color.r, color.g, color.b, 0.85), w)
-		draw_line(to_local(_beam_pts[0]), to_local(_beam_pts[1]), Color(1, 1, 1, 0.6), w * 0.4)
+		for seg in _beam_pts:
+			draw_line(to_local(seg[0]), to_local(seg[1]), Color(color.r, color.g, color.b, 0.85), w)
+			draw_line(to_local(seg[0]), to_local(seg[1]), Color(1, 1, 1, 0.6), w * 0.4)
 	# 棱镜折射光束（主光束 + 分裂小激光）
 	if atk == "split":
 		for seg in _prism_segs:

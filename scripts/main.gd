@@ -334,16 +334,36 @@ func _on_left_up(pos: Vector2) -> void:
 
 func _finish_deploy(pos: Vector2) -> void:
 	var tid := deploy_id
+	var cost := int(TowerDefs.get_def(tid)["cost"])
+	# 拖到已有塔上 → 直接合成
+	var target := _tower_at(pos)
+	if target != null:
+		var res := TowerDefs.fuse(tid, target.id)
+		if res == "":
+			_set_message("无法与该塔合成（需同级配方）。", 2.0)
+			return
+		if not GameState.spend_gold(cost):
+			_set_message("金币不足！%s 需 %d 金。" % [TowerDefs.name_of(tid), cost], 2.0)
+			return
+		var anchor: Vector2i = (tower_cells[target] as Array)[0]
+		var rsize := TowerDefs.footprint(res)
+		anchor.x = clampi(anchor.x, 0, COLS - rsize.x)
+		anchor.y = clampi(anchor.y, 0, ROWS - rsize.y)
+		_free_tower(target)
+		target.queue_free()
+		_spawn_tower(res, anchor, rsize, false)
+		_set_message("合成 → %s！" % TowerDefs.name_of(res), 2.0)
+		return
+	# 空地放置
 	var size := TowerDefs.footprint(tid)
-	var anchor := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
-	if not _can_place(anchor, size):
+	var anchor2 := _world_to_cell(pos) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+	if not _can_place(anchor2, size):
 		_set_message("放不下，换个位置。", 2.0)
 		return
-	var cost := int(TowerDefs.get_def(tid)["cost"])
 	if not GameState.spend_gold(cost):
 		_set_message("金币不足！%s 需 %d 金。" % [TowerDefs.name_of(tid), cost], 2.0)
 		return
-	_spawn_tower(tid, anchor, size, true)
+	_spawn_tower(tid, anchor2, size, true)
 	_set_message("")
 
 func _reoccupy(t: Tower, cells: Array) -> void:
@@ -464,11 +484,17 @@ func _draw() -> void:
 	var mp := get_global_mouse_position()
 	# 部署预览（从面板拖出）
 	if deploy_dragging:
-		var size := TowerDefs.footprint(deploy_id)
-		var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
-		var afford := GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
-		var ok := _can_place(anchor, size) and afford
-		_draw_cells(_footprint_cells(anchor, size), Color(0.4, 0.9, 0.5) if ok else Color(0.9, 0.3, 0.3))
+		var dtgt := _tower_at(mp)
+		if dtgt != null:
+			# 拖到塔上：绿圈=可合成 / 红圈=不可
+			var canf := TowerDefs.fuse(deploy_id, dtgt.id) != "" and GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
+			draw_arc(dtgt.global_position, 30.0, 0.0, TAU, 32, Color(0.3, 1, 0.4) if canf else Color(1, 0.3, 0.3), 3.0)
+		else:
+			var size := TowerDefs.footprint(deploy_id)
+			var anchor := _world_to_cell(mp) - Vector2i((size.x - 1) / 2, (size.y - 1) / 2)
+			var afford := GameState.gold >= int(TowerDefs.get_def(deploy_id)["cost"])
+			var ok := _can_place(anchor, size) and afford
+			_draw_cells(_footprint_cells(anchor, size), Color(0.4, 0.9, 0.5) if ok else Color(0.9, 0.3, 0.3))
 	# 移动已放置塔
 	elif dragging and drag_tower != null and is_instance_valid(drag_tower):
 		var size := TowerDefs.footprint(drag_tower.id)
@@ -539,7 +565,7 @@ func _run_autoplay() -> void:
 	GameState.add_gold(20000)
 	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun", "anti_mat",
 		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB",
-		"barrage", "burst_gl", "gl_array", "EE"]
+		"barrage", "burst_gl", "gl_array", "EE", "LL", "BB", "beam_burst", "ele_matrix"]
 	var col := 2
 	for tid in adv:
 		var size := TowerDefs.footprint(tid)
