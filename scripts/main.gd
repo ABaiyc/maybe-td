@@ -150,6 +150,7 @@ func _build_hud() -> void:
 func _mk_label(parent: Node, pos: Vector2, size: int) -> Label:
 	var l := Label.new()
 	l.position = pos
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 不拦截鼠标，避免遮挡地图点击
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", Color.WHITE)
 	parent.add_child(l)
@@ -181,7 +182,7 @@ func _process(delta: float) -> void:
 	if not GameState.running:
 		return
 	var hc := _world_to_cell(get_global_mouse_position())
-	if hc != hover_cell or dragging or deploy_dragging:
+	if hc != hover_cell or dragging or deploy_dragging or cheat_on:
 		hover_cell = hc
 		queue_redraw()
 	if dragging and drag_tower != null and is_instance_valid(drag_tower):
@@ -365,7 +366,7 @@ func _on_left_up(pos: Vector2) -> void:
 func _finish_deploy(pos: Vector2) -> void:
 	var tid := deploy_id
 	var free := deploy_free
-	var cost := int(TowerDefs.get_def(tid)["cost"])
+	var cost := int(TowerDefs.get_def(tid).get("cost", 0))  # 高级塔无 cost 字段，默认 0
 	# 作弊：直接放置任意塔（不合成）
 	if free:
 		var size0 := TowerDefs.footprint(tid)
@@ -575,15 +576,28 @@ func _cheat_rect(i: int) -> Rect2:
 
 func _draw_cheat() -> void:
 	draw_string(_font, Vector2(CHEAT_X, CHEAT_Y - 6.0), "作弊·拖塔免费放置", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.6, 0.6))
+	var mp := get_global_mouse_position()
+	var hover_id := ""
 	for i in cheat_ids.size():
 		var tid: String = cheat_ids[i]
 		var rect := _cheat_rect(i)
 		draw_rect(rect, Color(0.1, 0.1, 0.14, 0.92))
-		draw_rect(rect, Color(0.7, 0.7, 0.85), false, 1.0)
+		var border := Color(0.4, 1.0, 0.5) if rect.has_point(mp) else Color(0.7, 0.7, 0.85)
+		draw_rect(rect, border, false, 1.0)
 		var cc := rect.position + rect.size / 2.0
 		draw_circle(cc, 9.0, Color(0.95, 0.66, 0.74))
 		draw_circle(cc + Vector2(0, -4), 3.5, TowerDefs.color_of(tid))
 		draw_string(_font, rect.position + Vector2(2, rect.size.y - 2), str(int(TowerDefs.get_def(tid)["t"])), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
+		if rect.has_point(mp):
+			hover_id = tid
+	# 悬停作弊塔显示名称
+	if hover_id != "":
+		var nm := TowerDefs.name_of(hover_id)
+		var bw := float(nm.length() * 15 + 16)
+		var bx: float = CHEAT_X + CHEAT_COLS * (CHEAT_CELL + 3.0) + 6.0
+		var box := Rect2(bx, mp.y - 12.0, bw, 24.0)
+		draw_rect(box, Color(0, 0, 0, 0.8))
+		draw_string(_font, box.position + Vector2(8, 17), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 0.85))
 
 func _draw_cells(cells: Array, col: Color) -> void:
 	for c in cells:
