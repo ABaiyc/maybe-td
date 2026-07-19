@@ -10,6 +10,9 @@ const KING_CLEAR := 72.0
 const TOP_CLEAR := 80.0
 const SELL_REFUND := 0.6
 
+# 建造区边界：格子中心 x 超过此值为右侧 UI 栏，永久禁建
+const BUILD_RIGHT := 1120.0
+
 # 右侧基础塔面板
 const PAL_X := 1176.0
 const PAL_W := 92.0
@@ -56,12 +59,13 @@ var deploy_id := ""
 var deploy_free := false
 
 # 开发者作弊（按 C 开关）：直接放置任意塔，无需合成、无需金币
+# 面板位于右侧 UI 栏（基础塔面板下方），不占用建造区
 var cheat_on := false
 var cheat_ids: Array = []
-const CHEAT_X := 8.0
-const CHEAT_Y := 110.0
-const CHEAT_CELL := 30.0
-const CHEAT_COLS := 5
+const CHEAT_X := 1156.0
+const CHEAT_Y := 400.0
+const CHEAT_CELL := 26.0
+const CHEAT_COLS := 4
 
 # HUD
 var gold_label: Label
@@ -115,10 +119,10 @@ func _compute_blocked() -> void:
 			var bad := false
 			if center.y < TOP_CLEAR:
 				bad = true
+			elif center.x > BUILD_RIGHT:
+				bad = true  # 右侧 UI 栏（基础塔面板/作弊器）永久禁建
 			elif center.distance_to(kpos) < KING_CLEAR:
-				bad = true
-			elif _in_palette(center):
-				bad = true
+				bad = true  # 国王周围禁建
 			else:
 				for i in range(waypoints.size() - 1):
 					if _dist_point_seg(center, waypoints[i], waypoints[i + 1]) < PATH_CLEAR:
@@ -250,15 +254,13 @@ func _on_wave_gap_done() -> void:
 func _spawn_enemy(enemy_id: String) -> void:
 	var e := Enemy.new()
 	e.setup(EnemyDefs.get_def(enemy_id), waypoints)
-	if e.mech == "reroute":
-		e.alt_branches = level.get("alt_branches", [])
 	enemies_container.add_child(e)
 	if e.is_boss:
 		match e.mech:
 			"stealth":
 				_set_message("⚠ Boss 出现：%s！\n它伪装成了羊——只有元素(E)系的塔能识破攻击它！" % e.def.get("n", ""), 4.0)
-			"reroute":
-				_set_message("⚠ Boss 出现：%s！\n它很狡猾，掉血会突然改走岔路！" % e.def.get("n", ""), 4.0)
+			"rage":
+				_set_message("⚠ Boss 出现：%s！\n它掉血会瞬间狂暴加速并甩掉一切负面效果！" % e.def.get("n", ""), 4.0)
 			_:
 				_set_message("⚠ Boss 出现：%s！" % e.def.get("n", ""), 2.5)
 
@@ -547,10 +549,6 @@ func _set_message(t: String, timeout: float = 0.0) -> void:
 # ── 绘制 ──
 func _draw() -> void:
 	draw_rect(Rect2(0, 0, 1280, 720), bg_color)
-	# 备用分支（头狼改路用），画淡一些
-	for branch in level.get("alt_branches", []):
-		var bp := PackedVector2Array(branch)
-		draw_polyline(bp, road_color.darkened(0.15), 34.0)
 	draw_polyline(waypoints, road_color.darkened(0.3), 50.0)
 	draw_polyline(waypoints, road_color, 40.0)
 	draw_circle(waypoints[0], 15.0, Color(0.7, 0.3, 0.3))
@@ -628,8 +626,7 @@ func _draw_cheat() -> void:
 	if hover_id != "":
 		var nm := TowerDefs.name_of(hover_id)
 		var bw := float(nm.length() * 15 + 16)
-		var bx: float = CHEAT_X + CHEAT_COLS * (CHEAT_CELL + 3.0) + 6.0
-		var box := Rect2(bx, mp.y - 12.0, bw, 24.0)
+		var box := Rect2(CHEAT_X - bw - 8.0, mp.y - 12.0, bw, 24.0)
 		draw_rect(box, Color(0, 0, 0, 0.8))
 		draw_string(_font, box.position + Vector2(8, 17), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 0.85))
 
@@ -692,14 +689,15 @@ func _run_autoplay() -> void:
 	sheep.setup(EnemyDefs.get_def("wolf_sheep"), waypoints)
 	enemies_container.add_child(sheep)
 	print("[AUTOPLAY] stealth: hittable_by(B)=", sheep.hittable_by("B"), " hittable_by(E)=", sheep.hittable_by("E"), " hittable_by(LLLE)=", sheep.hittable_by("LLLE"))
-	# 改路机制断言：注入分支后打掉 30% 血，路点应切换
+	# 狂暴机制断言：上减速后打掉 30% 血 → 应清除减速并进入狂暴加速
 	var alpha := Enemy.new()
 	alpha.setup(EnemyDefs.get_def("alpha"), waypoints)
-	alpha.alt_branches = level.get("alt_branches", [])
 	enemies_container.add_child(alpha)
-	var wp_before := alpha.waypoints.duplicate()
+	alpha.apply_debuff("slow", 0.5, 5.0)
+	var slowed_speed := alpha._speed()
 	alpha.take_damage(alpha.max_hp * 0.3 / (1.0 - alpha.armor))
-	print("[AUTOPLAY] reroute: waypoints_changed=", alpha.waypoints != wp_before, " hp_ratio=%.2f" % (alpha.hp / alpha.max_hp))
+	print("[AUTOPLAY] rage: speed_before=", slowed_speed, " after=", alpha._speed(),
+		" debuff_cleared=", alpha.slow_time == 0.0, " raging=", alpha._rage_t > 0.0)
 	sheep.queue_free()
 	alpha.queue_free()
 	started = true

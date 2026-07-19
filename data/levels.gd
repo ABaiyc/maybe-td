@@ -15,7 +15,7 @@ const LEVEL1 := {
 	"alt_branches": [
 		[Vector2(560, 200), Vector2(700, 200), Vector2(700, 440), Vector2(1090, 440)],
 	],
-	"king_pos": Vector2(1170, 440),
+	"king_pos": Vector2(1130, 440),
 	"slots": [
 		Vector2(140, 400), Vector2(360, 380), Vector2(360, 560),
 		Vector2(460, 300), Vector2(660, 320), Vector2(720, 540),
@@ -43,7 +43,7 @@ const LEVEL2 := {
 	"alt_branches": [
 		[Vector2(300, 180), Vector2(460, 180), Vector2(460, 520), Vector2(940, 520)],
 	],
-	"king_pos": Vector2(1170, 240),
+	"king_pos": Vector2(1130, 240),
 	"slots": [
 		Vector2(180, 360), Vector2(420, 300), Vector2(460, 420),
 		Vector2(540, 360), Vector2(760, 360), Vector2(800, 420),

@@ -15,10 +15,12 @@ var atk: float = 4.0
 var radius: float = 13.0
 var is_boss: bool = false
 var color: Color = Color.GRAY
-var mech: String = ""            # Boss 机制: reroute(改路) / stealth(伪装)
+var mech: String = ""            # Boss 机制: rage(狂暴加速) / stealth(伪装)
 var stealth: bool = false        # 伪装态：自动索敌无法锁定，仅 E 系范围伤害可命中
-var alt_branches: Array = []     # 改路用备用分支（由 main 注入）
-var _reroute_thresholds: Array = [0.75, 0.5, 0.25]
+var _rage_thresholds: Array = [0.75, 0.5, 0.25]
+var _rage_t: float = 0.0         # 狂暴剩余时间（期间加速）
+const RAGE_SPEED := 2.4
+const RAGE_DUR := 1.6
 
 # debuff
 var slow_factor: float = 1.0
@@ -69,7 +71,7 @@ func _advance(delta: float) -> void:
 	var target: Vector2 = waypoints[index]
 	var to_target: Vector2 = target - global_position
 	var dist: float = to_target.length()
-	var step: float = base_speed * slow_factor * delta
+	var step: float = _speed() * delta
 	if step >= dist:
 		global_position = target
 		index += 1
@@ -88,13 +90,21 @@ func _besiege(delta: float) -> void:
 		var to_king: Vector2 = _king.global_position - global_position
 		var d: float = to_king.length()
 		if d > 56.0:
-			global_position += to_king / d * base_speed * slow_factor * delta
+			global_position += to_king / d * _speed() * delta
 	_besiege_cd -= delta
 	if _besiege_cd <= 0.0:
 		_besiege_cd = BESIEGE_INTERVAL
 		GameState.damage_king(atk)
 
+func _speed() -> float:
+	var s := base_speed * slow_factor
+	if _rage_t > 0.0:
+		s = base_speed * RAGE_SPEED  # 狂暴期间无视减速全速冲刺
+	return s
+
 func _tick_debuffs(delta: float) -> void:
+	if _rage_t > 0.0:
+		_rage_t -= delta
 	if slow_time > 0.0:
 		slow_time -= delta
 		if slow_time <= 0.0:
@@ -138,32 +148,29 @@ func _apply_damage(amount: float, _is_dot: bool) -> void:
 		GameState.add_gold(reward)
 		queue_free()
 	else:
-		_check_reroute()
+		_check_rage()
 		queue_redraw()
 
-## 头狼：血量掉过阈值时跳到备用分支路径（变异改路）
-func _check_reroute() -> void:
-	if mech != "reroute" or besieging or alt_branches.is_empty():
+## 头狼：血量每掉过 75%/50%/25% 阈值 → 瞬间狂暴加速 + 清除自身负面效果
+func _check_rage() -> void:
+	if mech != "rage":
 		return
 	var ratio := hp / max_hp
-	while not _reroute_thresholds.is_empty() and ratio <= _reroute_thresholds[0]:
-		_reroute_thresholds.pop_front()
-		_do_reroute()
+	while not _rage_thresholds.is_empty() and ratio <= _rage_thresholds[0]:
+		_rage_thresholds.pop_front()
+		_do_rage()
 
-func _do_reroute() -> void:
-	var branch: Array = alt_branches[randi() % alt_branches.size()]
-	var new_wp := PackedVector2Array(branch)
-	# 找分支上最近的路点，从那里继续走
-	var best_i := 0
-	var best_d := INF
-	for i in new_wp.size():
-		var d := global_position.distance_to(new_wp[i])
-		if d < best_d:
-			best_d = d
-			best_i = i
-	waypoints = new_wp
-	index = best_i
-	_howl_flash = 0.5
+func _do_rage() -> void:
+	# 清除负面效果
+	slow_factor = 1.0
+	slow_time = 0.0
+	burn_dps = 0.0
+	burn_time = 0.0
+	mark = 0.0
+	mark_time = 0.0
+	# 狂暴加速
+	_rage_t = RAGE_DUR
+	_howl_flash = 0.6
 	queue_redraw()
 
 var _howl_flash := 0.0
@@ -178,6 +185,8 @@ func _draw() -> void:
 	if _howl_flash > 0.0:
 		_howl_flash -= 0.016
 		draw_arc(Vector2.ZERO, radius + 8.0, 0.0, TAU, 24, Color(1, 0.3, 0.2, _howl_flash), 3.0)
+	if _rage_t > 0.0:
+		body = body.lerp(Color(1.0, 0.3, 0.2), 0.35)  # 狂暴泛红
 	draw_circle(Vector2.ZERO, radius, body)
 	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 24, body.darkened(0.5), 2.0)
 	# 尖耳朵（狼）

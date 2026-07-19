@@ -8,7 +8,7 @@ const WOLVES := {
 	"fast": {"n": "疾风狼", "hp": 24.0, "speed": 165.0, "armor": 0.0, "reward": 7, "atk": 3.0, "radius": 11.0, "col": "9fb6c9", "boss": false},
 	"armored": {"n": "铁背狼", "hp": 130.0, "speed": 68.0, "armor": 0.4, "reward": 14, "atk": 7.0, "radius": 16.0, "col": "5a606b", "boss": false},
 	# Boss（M1 无特殊机制，纯肉）
-	"alpha": {"n": "头狼", "hp": 1400.0, "speed": 78.0, "armor": 0.2, "reward": 120, "atk": 16.0, "radius": 26.0, "col": "3a3f4a", "boss": true, "mech": "reroute"},
+	"alpha": {"n": "头狼", "hp": 1400.0, "speed": 78.0, "armor": 0.2, "reward": 120, "atk": 16.0, "radius": 26.0, "col": "3a3f4a", "boss": true, "mech": "rage"},
 	"wolf_sheep": {"n": "披着羊皮的狼", "hp": 1700.0, "speed": 86.0, "armor": 0.1, "reward": 140, "atk": 14.0, "radius": 24.0, "col": "e8e4d8", "boss": true, "mech": "stealth"},
 }
 
