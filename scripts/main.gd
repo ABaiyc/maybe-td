@@ -74,7 +74,7 @@ var _msg_timeout := 0.0
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
-	level = Levels.get_level(0)
+	level = Levels.get_level(GameState.current_level)
 	waypoints = PackedVector2Array(level["waypoints"])
 	bg_color = Color(level.get("bg", "21281b"))
 	road_color = Color(level.get("road", "4a5a36"))
@@ -250,7 +250,17 @@ func _on_wave_gap_done() -> void:
 func _spawn_enemy(enemy_id: String) -> void:
 	var e := Enemy.new()
 	e.setup(EnemyDefs.get_def(enemy_id), waypoints)
+	if e.mech == "reroute":
+		e.alt_branches = level.get("alt_branches", [])
 	enemies_container.add_child(e)
+	if e.is_boss:
+		match e.mech:
+			"stealth":
+				_set_message("⚠ Boss 出现：%s！\n它伪装成了羊——只有元素(E)系的塔能识破攻击它！" % e.def.get("n", ""), 4.0)
+			"reroute":
+				_set_message("⚠ Boss 出现：%s！\n它很狡猾，掉血会突然改走岔路！" % e.def.get("n", ""), 4.0)
+			_:
+				_set_message("⚠ Boss 出现：%s！" % e.def.get("n", ""), 2.5)
 
 func _alive_enemies() -> int:
 	var n := 0
@@ -263,7 +273,11 @@ func _on_game_over(won: bool) -> void:
 	spawn_timer.stop()
 	wave_gap_timer.stop()
 	if won:
-		_set_message("🏆 胜利！国王守住了，狼群被全部击退。\n按 R 重新开始。", 0.0)
+		GameState.unlock_next_level()
+		if GameState.current_level + 1 < Levels.count():
+			_set_message("🏆 胜利！第二关已解锁。\n按 N 进入下一关，按 R 重玩本关。", 0.0)
+		else:
+			_set_message("🏆 全部关卡通关！猪猪王国安全了！\n按 R 重玩本关，按 1/2 选关。", 0.0)
 	else:
 		_set_message("💀 国王被狼群攻陷……\n按 R 重新开始。", 0.0)
 
@@ -272,6 +286,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			get_tree().reload_current_scene()
+			return
+		if event.keycode == KEY_N and not GameState.running \
+				and GameState.current_level + 1 < Levels.count() \
+				and GameState.current_level + 1 < GameState.unlocked_levels:
+			GameState.current_level += 1
+			get_tree().reload_current_scene()
+			return
+		if event.keycode == KEY_1 or event.keycode == KEY_2:
+			var idx := 0 if event.keycode == KEY_1 else 1
+			if idx < Levels.count() and idx < GameState.unlocked_levels:
+				GameState.current_level = idx
+				get_tree().reload_current_scene()
+			else:
+				_set_message("关卡未解锁：先通过前一关。", 2.0)
 			return
 		if event.keycode == KEY_C:
 			cheat_on = not cheat_on
@@ -519,9 +547,15 @@ func _set_message(t: String, timeout: float = 0.0) -> void:
 # ── 绘制 ──
 func _draw() -> void:
 	draw_rect(Rect2(0, 0, 1280, 720), bg_color)
+	# 备用分支（头狼改路用），画淡一些
+	for branch in level.get("alt_branches", []):
+		var bp := PackedVector2Array(branch)
+		draw_polyline(bp, road_color.darkened(0.15), 34.0)
 	draw_polyline(waypoints, road_color.darkened(0.3), 50.0)
 	draw_polyline(waypoints, road_color, 40.0)
 	draw_circle(waypoints[0], 15.0, Color(0.7, 0.3, 0.3))
+	draw_string(_font, Vector2(700, 34), "第%d关 · %s" % [GameState.current_level + 1, level.get("name", "")], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.85))
+	draw_string(_font, Vector2(700, 56), "按1/2选关(需解锁)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 
 	var mp := get_global_mouse_position()
 	# 部署预览（从面板拖出）
@@ -653,7 +687,22 @@ func _run_autoplay() -> void:
 	var b := _spawn_tower("L", Vector2i(4, 15), TowerDefs.footprint("L"), false)
 	_do_merge(a, b, TowerDefs.fuse("L", "L"))
 	print("[AUTOPLAY] towers=", towers_container.get_child_count(), " merge L+L=", TowerDefs.fuse("L", "L"))
+	# 伪装机制断言：B 塔(无E)锁不住伪装狼，E 塔能锁
+	var sheep := Enemy.new()
+	sheep.setup(EnemyDefs.get_def("wolf_sheep"), waypoints)
+	enemies_container.add_child(sheep)
+	print("[AUTOPLAY] stealth: hittable_by(B)=", sheep.hittable_by("B"), " hittable_by(E)=", sheep.hittable_by("E"), " hittable_by(LLLE)=", sheep.hittable_by("LLLE"))
+	# 改路机制断言：注入分支后打掉 30% 血，路点应切换
+	var alpha := Enemy.new()
+	alpha.setup(EnemyDefs.get_def("alpha"), waypoints)
+	alpha.alt_branches = level.get("alt_branches", [])
+	enemies_container.add_child(alpha)
+	var wp_before := alpha.waypoints.duplicate()
+	alpha.take_damage(alpha.max_hp * 0.3 / (1.0 - alpha.armor))
+	print("[AUTOPLAY] reroute: waypoints_changed=", alpha.waypoints != wp_before, " hp_ratio=%.2f" % (alpha.hp / alpha.max_hp))
+	sheep.queue_free()
+	alpha.queue_free()
 	started = true
 	prep_timer = 1.0
 	GameState.set_phase(GameState.Phase.PREP)
-	GameState.game_over.connect(func(won): print("[AUTOPLAY] game_over won=", won, " king_hp=", int(GameState.king_hp), " wave=", GameState.wave))
+	GameState.game_over.connect(func(won): print("[AUTOPLAY] game_over won=", won, " king_hp=", int(GameState.king_hp), " wave=", GameState.wave, " level=", GameState.current_level, " unlocked=", GameState.unlocked_levels))

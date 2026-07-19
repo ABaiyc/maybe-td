@@ -16,6 +16,7 @@ var color: Color = Color(1, 0.85, 0.3)
 var split: int = 0          # 爆炸后分裂出的小炸弹数
 var bomblet: bool = false   # 是否为分裂出的小炸弹（更小）
 var bounces: int = 0        # 弹射剩余次数（元素矩阵）
+var can_hit_stealth := false  # 元素系弹药可命中伪装敌人
 var _bhit := {}             # 弹射已命中集合
 
 var target: Enemy = null          # single 用
@@ -84,6 +85,8 @@ func _next_bounce_target() -> Enemy:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.is_queued_for_deletion() or _bhit.has(e.get_instance_id()):
 			continue
+		if e.stealth and not can_hit_stealth:
+			continue
 		var d: float = global_position.distance_to(e.global_position)
 		if d <= best_d:
 			best_d = d
@@ -94,6 +97,8 @@ func _move_pierce(delta: float) -> void:
 	global_position += dir * speed * delta
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.is_queued_for_deletion() or _hit.has(e.get_instance_id()):
+			continue
+		if e.stealth and not can_hit_stealth:
 			continue
 		if global_position.distance_to(e.global_position) <= e.radius + 6.0:
 			e.take_damage(damage, ignore_armor)
@@ -118,6 +123,8 @@ func _explode() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.is_queued_for_deletion():
 			continue
+		if e.stealth and not can_hit_stealth:
+			continue
 		if global_position.distance_to(e.global_position) <= splash + e.radius:
 			e.take_damage(damage, ignore_armor)
 			if debuff:
@@ -134,6 +141,7 @@ func _explode() -> void:
 			b.ignore_armor = ignore_armor
 			b.color = color
 			b.bomblet = true
+			b.can_hit_stealth = can_hit_stealth
 			b.global_position = global_position
 			b.dest = global_position + Vector2.RIGHT.rotated(randf() * TAU) * randf_range(45.0, 95.0)
 			b.speed = 300.0

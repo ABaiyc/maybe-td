@@ -15,6 +15,10 @@ var atk: float = 4.0
 var radius: float = 13.0
 var is_boss: bool = false
 var color: Color = Color.GRAY
+var mech: String = ""            # Boss 机制: reroute(改路) / stealth(伪装)
+var stealth: bool = false        # 伪装态：自动索敌无法锁定，仅 E 系范围伤害可命中
+var alt_branches: Array = []     # 改路用备用分支（由 main 注入）
+var _reroute_thresholds: Array = [0.75, 0.5, 0.25]
 
 # debuff
 var slow_factor: float = 1.0
@@ -41,6 +45,8 @@ func setup(enemy_def: Dictionary, wp: PackedVector2Array, hp_mult: float = 1.0) 
 	atk = float(def.get("atk", 4.0))
 	radius = float(def.get("radius", 13.0))
 	is_boss = bool(def.get("boss", false))
+	mech = String(def.get("mech", ""))
+	stealth = mech == "stealth"
 	color = Color(def.get("col", "888888"))
 	position = wp[0]
 
@@ -115,6 +121,10 @@ func take_damage(d: float, ignore_armor: float = 0.0) -> void:
 	var eff_armor: float = maxf(0.0, armor - ignore_armor)
 	_apply_damage(d * (1.0 - eff_armor) * (1.0 + mark), false)
 
+## 伪装判定：非伪装敌人谁都能打；伪装敌人只有成分含 E(元素) 的塔能锁定/命中
+func hittable_by(comp: String) -> bool:
+	return not stealth or comp.contains("E")
+
 func apply_mark(stack: float, max_mark: float, dur: float) -> void:
 	mark = minf(max_mark, mark + stack)
 	mark_time = maxf(mark_time, dur)
@@ -128,12 +138,46 @@ func _apply_damage(amount: float, _is_dot: bool) -> void:
 		GameState.add_gold(reward)
 		queue_free()
 	else:
+		_check_reroute()
 		queue_redraw()
+
+## 头狼：血量掉过阈值时跳到备用分支路径（变异改路）
+func _check_reroute() -> void:
+	if mech != "reroute" or besieging or alt_branches.is_empty():
+		return
+	var ratio := hp / max_hp
+	while not _reroute_thresholds.is_empty() and ratio <= _reroute_thresholds[0]:
+		_reroute_thresholds.pop_front()
+		_do_reroute()
+
+func _do_reroute() -> void:
+	var branch: Array = alt_branches[randi() % alt_branches.size()]
+	var new_wp := PackedVector2Array(branch)
+	# 找分支上最近的路点，从那里继续走
+	var best_i := 0
+	var best_d := INF
+	for i in new_wp.size():
+		var d := global_position.distance_to(new_wp[i])
+		if d < best_d:
+			best_d = d
+			best_i = i
+	waypoints = new_wp
+	index = best_i
+	_howl_flash = 0.5
+	queue_redraw()
+
+var _howl_flash := 0.0
 
 func _draw() -> void:
 	var body := color
 	if slow_time > 0.0:
 		body = body.lerp(Color(0.5, 0.7, 1.0), 0.4)  # 冰冻泛蓝
+	if stealth:
+		# 伪装态：羊皮白 + 半透明
+		body = Color(0.93, 0.9, 0.82, 0.55)
+	if _howl_flash > 0.0:
+		_howl_flash -= 0.016
+		draw_arc(Vector2.ZERO, radius + 8.0, 0.0, TAU, 24, Color(1, 0.3, 0.2, _howl_flash), 3.0)
 	draw_circle(Vector2.ZERO, radius, body)
 	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 24, body.darkened(0.5), 2.0)
 	# 尖耳朵（狼）

@@ -20,6 +20,34 @@ var king_hp: float = KING_HP
 var phase: int = Phase.PREP
 var running: bool = false
 
+# 关卡进度（持久化到 user://save.json）
+const SAVE_PATH := "user://save.json"
+var current_level: int = 0
+var unlocked_levels: int = 1
+
+func _ready() -> void:
+	load_save()
+
+func unlock_next_level() -> void:
+	if current_level + 1 >= unlocked_levels:
+		unlocked_levels = mini(current_level + 2, Levels.count())
+		save_game()
+
+func save_game() -> void:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"unlocked_levels": unlocked_levels}))
+
+func load_save() -> void:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var data: Variant = JSON.parse_string(f.get_as_text())
+	if data is Dictionary:
+		unlocked_levels = maxi(1, int(data.get("unlocked_levels", 1)))
+
 func reset(_total_waves: int) -> void:
 	gold = START_GOLD
 	wave = 0

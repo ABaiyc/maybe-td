@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Tower
 ## 数据驱动防御塔。按 TowerDefs.attack_of(id) 的攻击原型分派，忠实还原设计稿：
 ## beam 持续激光 / proj 弹道 / snipe 狙击 / domain 领域 / mine 布雷 /
@@ -18,6 +18,7 @@ var ignore_armor: float = 0.0
 var color: Color = Color.WHITE
 var tier: int = 1
 var waypoints: PackedVector2Array
+var comp: String = ""       # 元素成分（含E可锁定伪装敌人）
 
 var projectiles_parent: Node = null
 
@@ -54,6 +55,7 @@ func setup(tower_id: String) -> void:
 	splash = float(def.get("splash", 0.0))
 	debuff = bool(def.get("debuff", false))
 	tier = int(def.get("t", 1))
+	comp = String(def.get("c", id))
 	color = TowerDefs.color_of(id)
 	if id in ["LB", "rapid_ap", "ele_ap", "rapid_ap_chain"]:
 		ignore_armor = 0.3
@@ -100,7 +102,7 @@ func _fire_cd() -> float:
 func _nearest_n(n: int) -> Array:
 	var arr: Array = []
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		var d: float = global_position.distance_to(e.global_position)
 		if d <= range_r:
@@ -114,7 +116,7 @@ func _nearest_n(n: int) -> Array:
 func _enemies_along(dirv: Vector2) -> Array:
 	var along: Array = []
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		var rel: Vector2 = e.global_position - global_position
 		var proj: float = rel.dot(dirv)
@@ -138,7 +140,7 @@ func _find_nearest() -> Enemy:
 	var best: Enemy = null
 	var best_d := range_r
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		var d: float = global_position.distance_to(e.global_position)
 		if d <= best_d:
@@ -150,7 +152,7 @@ func _find_highest_hp() -> Enemy:
 	var best: Enemy = null
 	var best_hp := -1.0
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		if global_position.distance_to(e.global_position) <= range_r and e.hp > best_hp:
 			best_hp = e.hp
@@ -161,7 +163,7 @@ func _find_farthest() -> Enemy:
 	var best: Enemy = null
 	var best_i := -1
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		if global_position.distance_to(e.global_position) <= range_r and e.index > best_i:
 			best_i = e.index
@@ -273,7 +275,7 @@ func _do_prism(delta: float) -> void:
 func _nearest_others(pos: Vector2, n: int, visited: Dictionary, radius: float) -> Array:
 	var arr: Array = []
 	for e in _enemies():
-		if e.is_queued_for_deletion() or visited.has(e.get_instance_id()):
+		if e.is_queued_for_deletion() or visited.has(e.get_instance_id()) or not e.hittable_by(comp):
 			continue
 		var d: float = pos.distance_to(e.global_position)
 		if d <= radius:
@@ -362,7 +364,7 @@ func _railgun_fire(scale: float) -> void:
 	var endp := global_position + dirv * 1600.0
 	var dmg := damage * scale * _catalyst_mult()
 	for e in _enemies():
-		if e.is_queued_for_deletion():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		if _dist_seg(e.global_position, global_position, endp) <= 38.0 + e.radius:
 			e.take_damage(dmg, ignore_armor)
@@ -447,6 +449,7 @@ func _spawn_double(t: Enemy) -> void:
 	var perp := Vector2(-dir.y, dir.x) * 7.0
 	for s in [-1.0, 1.0]:
 		var p := Projectile.new()
+		p.can_hit_stealth = comp.contains("E")
 		p.mode = "single"
 		p.target = t
 		p.damage = damage * _catalyst_mult()
@@ -459,6 +462,7 @@ func _spawn_double(t: Enemy) -> void:
 func _fire_ele_matrix() -> void:
 	for tgt in _nearest_n(3):
 		var p := Projectile.new()
+		p.can_hit_stealth = comp.contains("E")
 		p.mode = "bounce"
 		p.target = tgt
 		p.bounces = 2
@@ -492,6 +496,7 @@ func _do_ring(delta: float) -> void:
 
 func _spawn_one(t: Enemy) -> void:
 	var p := Projectile.new()
+	p.can_hit_stealth = comp.contains("E")
 	p.damage = damage * _catalyst_mult()
 	p.pierce = pierce
 	p.splash = splash
@@ -524,6 +529,7 @@ func _spawn_fan(t: Enemy, count: int, spread_deg: float) -> void:
 		var frac := 0.0 if count <= 1 else (float(i) / float(count - 1) - 0.5)
 		var d := dir.rotated(deg_to_rad(spread_deg) * frac)
 		var p := Projectile.new()
+		p.can_hit_stealth = comp.contains("E")
 		p.mode = "aoe"
 		p.damage = damage * mult
 		p.splash = maxf(splash * 0.7, 36.0)
@@ -537,6 +543,7 @@ func _spawn_fan(t: Enemy, count: int, spread_deg: float) -> void:
 
 func _spawn_aoe(dest: Vector2, sp: float, dmg: float, split: int) -> void:
 	var p := Projectile.new()
+	p.can_hit_stealth = comp.contains("E")
 	p.mode = "aoe"
 	p.damage = dmg * _catalyst_mult()
 	p.splash = sp
