@@ -160,13 +160,19 @@ func _find_highest_hp() -> Enemy:
 	return best
 
 func _find_farthest() -> Enemy:
+	# "走得最远"= 距终点剩余路程最短（围攻中的算已到达=0）
 	var best: Enemy = null
-	var best_i := -1
+	var best_left := INF
 	for e in _enemies():
 		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
-		if global_position.distance_to(e.global_position) <= range_r and e.index > best_i:
-			best_i = e.index
+		if global_position.distance_to(e.global_position) > range_r:
+			continue
+		var left: float = 0.0
+		if not e.besieging and e.waypoints.size() > 0:
+			left = e.global_position.distance_to(e.waypoints[e.waypoints.size() - 1])
+		if left < best_left:
+			best_left = left
 			best = e
 	return best
 
@@ -333,20 +339,28 @@ func _active_mines() -> int:
 	return n
 
 func _random_path_point() -> Vector2:
-	if waypoints.size() < 2:
-		return Vector2(-9999, -9999)
-	var cands: Array = []
-	var samples := 48
-	for i in samples:
-		var tt: float = float(i) / float(samples - 1) * float(waypoints.size() - 1)
-		var seg: int = mini(int(tt), waypoints.size() - 2)
-		var f: float = tt - seg
-		var pt: Vector2 = waypoints[seg].lerp(waypoints[seg + 1], f)
-		if global_position.distance_to(pt) <= range_r:
-			cands.append(pt)
-	if cands.is_empty():
-		return Vector2(-9999, -9999)
-	return cands[randi() % cands.size()]
+	if waypoints.size() >= 2:
+		# 路径模式：沿路点撒雷
+		var cands: Array = []
+		var samples := 48
+		for i in samples:
+			var tt: float = float(i) / float(samples - 1) * float(waypoints.size() - 1)
+			var seg: int = mini(int(tt), waypoints.size() - 2)
+			var f: float = tt - seg
+			var pt: Vector2 = waypoints[seg].lerp(waypoints[seg + 1], f)
+			if global_position.distance_to(pt) <= range_r:
+				cands.append(pt)
+		if cands.is_empty():
+			return Vector2(-9999, -9999)
+		return cands[randi() % cands.size()]
+	# 车道模式：在塔上方冲锋区内随机撒雷
+	for _i in 12:
+		var ang := randf_range(PI * 0.15, PI * 0.85)  # 上半圆
+		var r := randf_range(range_r * 0.3, range_r)
+		var pt := global_position + Vector2(cos(ang), -sin(ang)) * r
+		if pt.y > 80.0 and pt.y < global_position.y - 40.0 and pt.x > 20.0 and pt.x < 1100.0:
+			return pt
+	return Vector2(-9999, -9999)
 
 # ── 充能炮 ──
 func _do_charge(delta: float) -> void:

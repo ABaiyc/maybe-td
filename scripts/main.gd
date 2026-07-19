@@ -5,10 +5,12 @@ extends Node2D
 const CELL := 40.0
 const COLS := 32
 const ROWS := 18
-const PATH_CLEAR := 42.0
 const KING_CLEAR := 72.0
-const TOP_CLEAR := 80.0
 const SELL_REFUND := 0.6
+
+# 竖版车道模式：上方出怪往下走，下方一条塔位带（两格高，正好放 2×2 塔）
+const ROW_TOP := 560.0      # 塔位带上缘 = 防线
+const ROW_BOTTOM := 640.0   # 塔位带下缘
 
 # 建造区边界：格子中心 x 超过此值为右侧 UI 栏，永久禁建
 const BUILD_RIGHT := 1120.0
@@ -23,9 +25,8 @@ const PAL_GAP := 82.0
 var _debug_autoplay := false
 
 var level: Dictionary
-var waypoints: PackedVector2Array
 var bg_color := Color(0.13, 0.16, 0.12)
-var road_color := Color(0.29, 0.35, 0.21)
+var field_color := Color(0.17, 0.23, 0.15)
 var _font: Font
 
 var enemies_container: Node2D
@@ -79,9 +80,8 @@ var _msg_timeout := 0.0
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	level = Levels.get_level(GameState.current_level)
-	waypoints = PackedVector2Array(level["waypoints"])
 	bg_color = Color(level.get("bg", "21281b"))
-	road_color = Color(level.get("road", "4a5a36"))
+	field_color = Color(level.get("field", "2c3a26"))
 
 	_build_containers()
 	_build_king()
@@ -92,7 +92,7 @@ func _ready() -> void:
 	GameState.changed.connect(_refresh_hud)
 	GameState.game_over.connect(_on_game_over)
 	_refresh_hud()
-	_set_message("点击「开始」进入 10 秒布防。\n从右侧面板把猪塔拖到地图上部署；拖动已放置的塔到同级塔上可合成。")
+	_set_message("点击「开始」进入 10 秒布防。\n狼群会从上方压下来——把猪塔拖到下方防线塔位上！\n拖塔到同级塔上可合成。")
 	queue_redraw()
 	if _debug_autoplay:
 		_run_autoplay()
@@ -117,17 +117,12 @@ func _compute_blocked() -> void:
 			var c := Vector2i(cx, cy)
 			var center := _cell_center(c)
 			var bad := false
-			if center.y < TOP_CLEAR:
-				bad = true
+			if center.y < ROW_TOP or center.y > ROW_BOTTOM:
+				bad = true  # 只有下方塔位带可建造，上方是狼群冲锋区
 			elif center.x > BUILD_RIGHT:
 				bad = true  # 右侧 UI 栏（基础塔面板/作弊器）永久禁建
 			elif center.distance_to(kpos) < KING_CLEAR:
 				bad = true  # 国王周围禁建
-			else:
-				for i in range(waypoints.size() - 1):
-					if _dist_point_seg(center, waypoints[i], waypoints[i + 1]) < PATH_CLEAR:
-						bad = true
-						break
 			if bad:
 				blocked[c] = true
 
@@ -253,7 +248,10 @@ func _on_wave_gap_done() -> void:
 
 func _spawn_enemy(enemy_id: String) -> void:
 	var e := Enemy.new()
-	e.setup(EnemyDefs.get_def(enemy_id), waypoints)
+	# 上方随机横坐标出怪，垂直往下走到防线，然后围攻国王
+	var x := randf_range(Levels.SPAWN_X_MIN, Levels.SPAWN_X_MAX)
+	var wp := PackedVector2Array([Vector2(x, Levels.SPAWN_Y), Vector2(x, Levels.LINE_Y - 12.0)])
+	e.setup(EnemyDefs.get_def(enemy_id), wp)
 	enemies_container.add_child(e)
 	if e.is_boss:
 		match e.mech:
@@ -450,7 +448,6 @@ func _spawn_tower(tid: String, anchor: Vector2i, size: Vector2i, _validate: bool
 	t.setup(tid)
 	t.position = _cells_center(cells)
 	t.projectiles_parent = projectiles_container
-	t.waypoints = waypoints
 	towers_container.add_child(t)
 	for c in cells:
 		occupied_cells[c] = t
@@ -549,9 +546,18 @@ func _set_message(t: String, timeout: float = 0.0) -> void:
 # ── 绘制 ──
 func _draw() -> void:
 	draw_rect(Rect2(0, 0, 1280, 720), bg_color)
-	draw_polyline(waypoints, road_color.darkened(0.3), 50.0)
-	draw_polyline(waypoints, road_color, 40.0)
-	draw_circle(waypoints[0], 15.0, Color(0.7, 0.3, 0.3))
+	# 上方冲锋区（狼从顶端出现往下走）
+	draw_rect(Rect2(0, 80, BUILD_RIGHT + 20.0, ROW_TOP - 80.0), field_color)
+	# 顶部出怪提示
+	for gx in range(120, int(BUILD_RIGHT), 200):
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(gx, 92), Vector2(gx - 8, 80), Vector2(gx + 8, 80)
+		]), Color(0.8, 0.3, 0.3, 0.55))
+	# 防线（塔位带上缘）
+	draw_line(Vector2(0, ROW_TOP), Vector2(BUILD_RIGHT + 20.0, ROW_TOP), Color(0.85, 0.25, 0.25, 0.9), 3.0)
+	draw_string(_font, Vector2(12, ROW_TOP - 8), "⚔ 防线 —— 狼越过这里就会围攻国王", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.9, 0.5, 0.5, 0.8))
+	# 塔位带
+	draw_rect(Rect2(0, ROW_TOP, BUILD_RIGHT + 20.0, ROW_BOTTOM - ROW_TOP), bg_color.lightened(0.06))
 	draw_string(_font, Vector2(700, 34), "第%d关 · %s" % [GameState.current_level + 1, level.get("name", "")], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.85))
 	draw_string(_font, Vector2(700, 56), "按1/2选关(需解锁)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 
@@ -670,28 +676,39 @@ func _draw_palette() -> void:
 # ── 仅供无头验证 ──
 func _run_autoplay() -> void:
 	GameState.add_gold(20000)
-	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun", "anti_mat",
-		"catalyst", "tactical_mark", "plasma_field", "plasma_field", "twin_laser", "prism", "emp", "LB",
-		"barrage", "burst_gl", "gl_array", "EE", "LL", "BB", "beam_burst", "ele_matrix"]
-	var col := 2
+	# 沿下方塔位带铺各原型塔（跳过国王禁建区）
+	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun",
+		"catalyst", "twin_laser", "prism", "barrage", "ele_matrix"]
+	var col := 0
+	var placed: Array = []
 	for tid in adv:
 		var size := TowerDefs.footprint(tid)
-		_spawn_tower(tid, Vector2i(col, 11), size, false)
-		col += maxi(2, size.x + 1)
-		if col > COLS - 4:
-			col = 2
-	var a := _spawn_tower("L", Vector2i(2, 15), TowerDefs.footprint("L"), false)
-	var b := _spawn_tower("L", Vector2i(4, 15), TowerDefs.footprint("L"), false)
-	_do_merge(a, b, TowerDefs.fuse("L", "L"))
+		while col <= COLS - 2 and not _can_place(Vector2i(col, 14), size):
+			col += 1
+		if col > COLS - 2:
+			break
+		placed.append(_spawn_tower(tid, Vector2i(col, 14), size, false))
+		col += 2
+	# 合成断言：最后两个空位放 L+L 合成
+	var pa: Vector2i = Vector2i(-1, -1)
+	for c2 in range(COLS - 2, 0, -1):
+		if _can_place(Vector2i(c2, 14), Vector2i(2, 2)):
+			pa = Vector2i(c2, 14)
+			break
+	if pa.x >= 0:
+		var a := _spawn_tower("L", pa, TowerDefs.footprint("L"), false)
+		var b: Tower = placed[0]
+		_do_merge(a, b, TowerDefs.fuse("L", "L"))
 	print("[AUTOPLAY] towers=", towers_container.get_child_count(), " merge L+L=", TowerDefs.fuse("L", "L"))
 	# 伪装机制断言：B 塔(无E)锁不住伪装狼，E 塔能锁
+	var test_wp := PackedVector2Array([Vector2(400, Levels.SPAWN_Y), Vector2(400, Levels.LINE_Y)])
 	var sheep := Enemy.new()
-	sheep.setup(EnemyDefs.get_def("wolf_sheep"), waypoints)
+	sheep.setup(EnemyDefs.get_def("wolf_sheep"), test_wp)
 	enemies_container.add_child(sheep)
 	print("[AUTOPLAY] stealth: hittable_by(B)=", sheep.hittable_by("B"), " hittable_by(E)=", sheep.hittable_by("E"), " hittable_by(LLLE)=", sheep.hittable_by("LLLE"))
 	# 狂暴机制断言：上减速后打掉 30% 血 → 应清除减速并进入狂暴加速
 	var alpha := Enemy.new()
-	alpha.setup(EnemyDefs.get_def("alpha"), waypoints)
+	alpha.setup(EnemyDefs.get_def("alpha"), test_wp)
 	enemies_container.add_child(alpha)
 	alpha.apply_debuff("slow", 0.5, 5.0)
 	var slowed_speed := alpha._speed()
