@@ -1,48 +1,44 @@
-﻿extends RefCounted
+extends RefCounted
 class_name Levels
-## 关卡数据（竖版车道模式）：上方出怪往下走，下方一排塔位，塔位带后是大肥猪国王防线。
-## 波次 waves：每波 {interval, entries:[[敌人id, 数量], ...], gap(波后间隔秒)}。
+## 无尽模式配置（类肉鸽）：不再有关卡/波次，出怪由分数难度曲线驱动（见 main.gd 出怪导演）。
 
-# 战场公共布局（两关共用）
 const SPAWN_Y := -30.0        # 出怪 y（屏幕上方外）
 const LINE_Y := 560.0         # 防线：敌人走到这里开始围攻国王
 const SPAWN_X_MIN := 60.0
 const SPAWN_X_MAX := 1060.0
 
-const LEVEL1 := {
-	"name": "草原防线",
+const CONFIG := {
+	"name": "无尽狼潮",
 	"bg": "23301f",
 	"field": "2c3a26",
 	"king_pos": Vector2(560, 682),
-	"waves": [
-		{"interval": 0.45, "gap": 4.0, "entries": [["wolf", 15]]},
-		{"interval": 0.4, "gap": 4.0, "entries": [["wolf", 20], ["fast", 8]]},
-		{"interval": 0.35, "gap": 4.5, "entries": [["wolf", 26], ["fast", 12]]},
-		{"interval": 0.3, "gap": 5.0, "entries": [["wolf", 22], ["fast", 14], ["armored", 8]]},
-		{"interval": 0.35, "gap": 0.0, "entries": [["armored", 10], ["wolf", 18], ["fast", 10], ["alpha", 1]]},
-	],
 }
 
-const LEVEL2 := {
-	"name": "雪原防线",
-	"bg": "1c2230",
-	"field": "252c40",
-	"king_pos": Vector2(560, 682),
-	"waves": [
-		{"interval": 0.4, "gap": 4.0, "entries": [["wolf", 20], ["armored", 5]]},
-		{"interval": 0.35, "gap": 4.0, "entries": [["fast", 20], ["armored", 10]]},
-		{"interval": 0.28, "gap": 4.5, "entries": [["wolf", 30], ["fast", 20]]},
-		{"interval": 0.3, "gap": 5.0, "entries": [["armored", 18], ["wolf", 20]]},
-		{"interval": 0.35, "gap": 0.0, "entries": [["armored", 14], ["fast", 20], ["wolf_sheep", 1]]},
-	],
-}
+# ── 分数难度曲线 ──
+## 出怪间隔：随分数缩短
+static func spawn_interval(score: int) -> float:
+	return clampf(0.85 - float(score) / 2500.0, 0.16, 0.85)
 
-const ALL := [LEVEL1, LEVEL2]
+## 敌人血量倍率：随分数增厚
+static func hp_mult(score: int) -> float:
+	return 1.0 + float(score) / 600.0
 
-static func get_level(idx: int) -> Dictionary:
-	if idx < 0 or idx >= ALL.size():
-		return LEVEL1
-	return ALL[idx]
+## 敌人移速倍率：缓慢上升，封顶 1.6
+static func speed_mult(score: int) -> float:
+	return minf(1.0 + float(score) / 5000.0, 1.6)
 
-static func count() -> int:
-	return ALL.size()
+## 分数解锁的敌人池（新机制怪按分数逐步登场）
+static func enemy_pool(score: int) -> Array:
+	var pool := ["wolf", "wolf", "wolf"]
+	if score >= 250:
+		pool.append_array(["fast", "fast"])
+	if score >= 700:
+		pool.append("armored")
+	if score >= 1400:
+		pool.append("armored")
+	return pool
+
+# Boss 登场：分数过阈值后周期性出现（头狼先、羊皮狼后）
+const ALPHA_UNLOCK := 1500
+const SHEEP_UNLOCK := 3500
+const BOSS_EVERY := 1200      # 解锁后每涨这么多分再来一只

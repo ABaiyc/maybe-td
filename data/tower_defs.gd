@@ -103,6 +103,24 @@ const ATTACK := {
 static func attack_of(id: String) -> String:
 	return ATTACK.get(id, "proj")
 
+## 肉鸽升级表：给某塔施加一个元素 → 升一级的产物（三级封顶）。
+## 一级+元素=对应二级；二级+元素=按下表映射到 21 种三级中的代表塔。
+const UPGRADE := {
+	"L": {"L": "LL", "E": "LE", "B": "LB"},
+	"E": {"L": "LE", "E": "EE", "B": "EB"},
+	"B": {"L": "LB", "E": "EB", "B": "BB"},
+	"LL": {"L": "prism", "E": "beam_burst", "B": "rapid_ap"},
+	"EE": {"L": "ele_matrix", "E": "reactor", "B": "barrage"},
+	"BB": {"L": "anti_mat", "E": "burst_gl", "B": "railgun"},
+	"LE": {"L": "twin_laser", "E": "plasma_field", "B": "emp"},
+	"LB": {"L": "rapid_ap_chain", "E": "omni", "B": "precision_snipe"},
+	"EB": {"L": "catalyst", "E": "gl_array", "B": "mine_layer"},
+}
+
+## 返回升级产物 id；三级塔或未知组合返回空串
+static func upgrade_result(tower_id: String, elem: String) -> String:
+	return UPGRADE.get(tower_id, {}).get(elem, "")
+
 static func get_def(id: String) -> Dictionary:
 	return TOWERS.get(id, {})
 

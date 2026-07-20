@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Projectile
 ## 三种模式：
 ##  single  - 追踪目标，命中单体
@@ -26,7 +26,7 @@ var _hit := {}                    # pierce 已命中集合
 var _life := 2.5
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_life -= delta
 	if _life <= 0.0:

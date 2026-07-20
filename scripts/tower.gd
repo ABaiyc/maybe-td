@@ -64,7 +64,7 @@ func setup(tower_id: String) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_since_fire += delta
 	if _since_fire > 3.0 and _ramp > 0:
@@ -97,9 +97,17 @@ func _do_cd(delta: float, fn: Callable) -> void:
 			_cooldown = _fire_cd()
 
 func _fire_cd() -> float:
+	var cd := fire_interval
 	if id == "BB":
-		return maxf(0.1, fire_interval - _ramp * 0.025)  # 越打越快，下限0.1s
-	return fire_interval
+		cd = maxf(0.1, fire_interval - _ramp * 0.025)  # 越打越快，下限0.1s
+	return cd / GameState.atk_speed_mult  # 满级后攻速加成
+
+## 单次射击伤害：含光环/全局攻击加成 + 暴击(2倍)
+func _shot_dmg() -> float:
+	var d := damage * _catalyst_mult()
+	if randf() < GameState.crit_chance:
+		d *= 2.0
+	return d
 
 ## 全场敌人（含越线围攻国王的），按威胁排序：越靠下(越接近国王)越优先
 func _threat_sorted() -> Array:
@@ -116,7 +124,7 @@ func _nearest_n(n: int) -> Array:
 	return all.slice(0, mini(n, all.size()))
 
 func _catalyst_mult() -> float:
-	var m := 1.0
+	var m := GameState.dmg_mult  # 满级后全局攻击加成
 	for o in get_tree().get_nodes_in_group("towers"):
 		if o == self or not is_instance_valid(o):
 			continue
@@ -334,7 +342,7 @@ func _random_path_point() -> Vector2:
 
 # ── 充能炮 ──
 func _do_charge(delta: float) -> void:
-	_charge += delta
+	_charge += delta * GameState.atk_speed_mult
 	queue_redraw()  # 刷新充能进度条
 	if _charge < fire_interval:
 		return
@@ -391,7 +399,7 @@ func _fire_snipe() -> bool:
 	var t := _find_highest_hp()
 	if t == null:
 		return false
-	var dmg := damage * _catalyst_mult()
+	var dmg := _shot_dmg()
 	if id == "precision_snipe":
 		dmg *= 3.0
 	t.take_damage(dmg, ignore_armor)
@@ -405,7 +413,7 @@ func _fire_mark() -> bool:
 	if t == null:
 		return false
 	t.apply_mark(0.2, 0.6, 3.0)
-	t.take_damage(damage * _catalyst_mult(), ignore_armor)
+	t.take_damage(_shot_dmg(), ignore_armor)
 	_flash = 0.12
 	_flash_to = t.global_position
 	queue_redraw()
@@ -437,7 +445,7 @@ func _spawn_double(t: Enemy) -> void:
 		p.can_hit_stealth = comp.contains("E")
 		p.mode = "single"
 		p.target = t
-		p.damage = damage * _catalyst_mult()
+		p.damage = _shot_dmg()
 		p.ignore_armor = ignore_armor
 		p.color = color
 		p.speed = 560.0
@@ -451,7 +459,7 @@ func _fire_ele_matrix() -> void:
 		p.mode = "bounce"
 		p.target = tgt
 		p.bounces = 2
-		p.damage = damage * _catalyst_mult()
+		p.damage = _shot_dmg()
 		p.debuff = true
 		p.color = color
 		p.speed = 600.0
@@ -482,7 +490,7 @@ func _do_ring(delta: float) -> void:
 func _spawn_one(t: Enemy) -> void:
 	var p := Projectile.new()
 	p.can_hit_stealth = comp.contains("E")
-	p.damage = damage * _catalyst_mult()
+	p.damage = _shot_dmg()
 	p.pierce = pierce
 	p.splash = splash
 	p.debuff = debuff
@@ -509,14 +517,13 @@ func _spawn_fan(t: Enemy, count: int, spread_deg: float) -> void:
 	var base := t.global_position - global_position
 	var dist := clampf(base.length(), 90.0, range_r)
 	var dir := base.normalized() if base.length() > 1.0 else Vector2.RIGHT
-	var mult := _catalyst_mult()
 	for i in count:
 		var frac := 0.0 if count <= 1 else (float(i) / float(count - 1) - 0.5)
 		var d := dir.rotated(deg_to_rad(spread_deg) * frac)
 		var p := Projectile.new()
 		p.can_hit_stealth = comp.contains("E")
 		p.mode = "aoe"
-		p.damage = damage * mult
+		p.damage = _shot_dmg()
 		p.splash = maxf(splash * 0.7, 36.0)
 		p.debuff = true
 		p.ignore_armor = ignore_armor

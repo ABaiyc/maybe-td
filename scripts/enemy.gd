@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Enemy
 ## 数据驱动的狼。沿路径行进；到终点转「围攻国王」状态，停下定时攻击国王（仍可被塔击杀）。
 ## 支持元素 debuff：slow(减速) / burn(灼烧DoT)。armor 提供伤害减免。
@@ -40,12 +40,12 @@ var _besiege_cd: float = 0.0
 const BESIEGE_INTERVAL := 0.8
 var _king: Node2D = null
 
-func setup(enemy_def: Dictionary, wp: PackedVector2Array, hp_mult: float = 1.0) -> void:
+func setup(enemy_def: Dictionary, wp: PackedVector2Array, hp_mult: float = 1.0, speed_mult: float = 1.0) -> void:
 	def = enemy_def
 	waypoints = wp
 	max_hp = float(def.get("hp", 40.0)) * hp_mult
 	hp = max_hp
-	base_speed = float(def.get("speed", 95.0))
+	base_speed = float(def.get("speed", 95.0)) * speed_mult
 	armor = float(def.get("armor", 0.0))
 	reward = int(def.get("reward", 8))
 	atk = float(def.get("atk", 4.0))
@@ -60,7 +60,7 @@ func _ready() -> void:
 	add_to_group("enemies")
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_tick_debuffs(delta)
 	_dmg_t -= delta
@@ -164,7 +164,8 @@ func _apply_damage(amount: float, _is_dot: bool) -> void:
 	_dmg_accum += amount
 	if hp <= 0.0:
 		_flush_damage_number()
-		GameState.add_gold(reward)
+		GameState.add_score(reward)
+		GameState.add_xp(float(reward) * 0.6)
 		queue_free()
 	else:
 		_check_rage()

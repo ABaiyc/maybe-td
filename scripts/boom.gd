@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Boom
 ## 一次性爆炸视觉：扩张光环 + 淡出。
 
@@ -8,7 +8,7 @@ var _t: float = 0.0
 const DUR := 0.26
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_t += delta
 	if _t >= DUR:

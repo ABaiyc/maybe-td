@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name DamageNumber
 ## 飘出的伤害数字：上浮、淡出、自毁。数值越大字越大越黄。
 
@@ -11,7 +11,7 @@ func _ready() -> void:
 	_vel = Vector2(randf_range(-14.0, 14.0), -46.0)
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_t += delta
 	if _t >= DUR:

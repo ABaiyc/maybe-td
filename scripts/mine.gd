@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Mine
 ## 自动布雷车埋下的地雷：静置在路径上，敌人靠近即引爆造成范围伤害。
 
@@ -10,7 +10,7 @@ var owner_tower: Node = null
 var _arm: float = 0.25  # 布置后短暂引信延迟
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	if _arm > 0.0:
 		_arm -= delta

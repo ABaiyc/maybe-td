@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name Ring
 ## 双子激光塔的元素圆环：先向外扩散再收缩，环边碰到的敌人受伤（扩散/收缩各一次=两段伤害）。
 
@@ -24,7 +24,7 @@ func _radius() -> float:
 	return max_radius * (1.0 - (_t - half) / half)
 
 func _process(delta: float) -> void:
-	if not GameState.running:
+	if not GameState.active():
 		return
 	_t += delta
 	var ph := 0 if _t < DUR * 0.5 else 1
