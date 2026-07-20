@@ -15,11 +15,11 @@ const LEVEL1 := {
 	"field": "2c3a26",
 	"king_pos": Vector2(560, 682),
 	"waves": [
-		{"interval": 0.7, "gap": 4.0, "entries": [["wolf", 6]]},
-		{"interval": 0.65, "gap": 4.0, "entries": [["wolf", 8], ["fast", 3]]},
-		{"interval": 0.6, "gap": 4.5, "entries": [["wolf", 10], ["fast", 5]]},
-		{"interval": 0.55, "gap": 5.0, "entries": [["wolf", 8], ["fast", 6], ["armored", 3]]},
-		{"interval": 0.7, "gap": 0.0, "entries": [["armored", 4], ["wolf", 6], ["alpha", 1]]},
+		{"interval": 0.45, "gap": 4.0, "entries": [["wolf", 15]]},
+		{"interval": 0.4, "gap": 4.0, "entries": [["wolf", 20], ["fast", 8]]},
+		{"interval": 0.35, "gap": 4.5, "entries": [["wolf", 26], ["fast", 12]]},
+		{"interval": 0.3, "gap": 5.0, "entries": [["wolf", 22], ["fast", 14], ["armored", 8]]},
+		{"interval": 0.35, "gap": 0.0, "entries": [["armored", 10], ["wolf", 18], ["fast", 10], ["alpha", 1]]},
 	],
 }
 
@@ -29,11 +29,11 @@ const LEVEL2 := {
 	"field": "252c40",
 	"king_pos": Vector2(560, 682),
 	"waves": [
-		{"interval": 0.6, "gap": 4.0, "entries": [["wolf", 8], ["armored", 2]]},
-		{"interval": 0.55, "gap": 4.0, "entries": [["fast", 8], ["armored", 4]]},
-		{"interval": 0.5, "gap": 4.5, "entries": [["wolf", 12], ["fast", 8]]},
-		{"interval": 0.55, "gap": 5.0, "entries": [["armored", 8], ["wolf", 8]]},
-		{"interval": 0.7, "gap": 0.0, "entries": [["armored", 6], ["fast", 8], ["wolf_sheep", 1]]},
+		{"interval": 0.4, "gap": 4.0, "entries": [["wolf", 20], ["armored", 5]]},
+		{"interval": 0.35, "gap": 4.0, "entries": [["fast", 20], ["armored", 10]]},
+		{"interval": 0.28, "gap": 4.5, "entries": [["wolf", 30], ["fast", 20]]},
+		{"interval": 0.3, "gap": 5.0, "entries": [["armored", 18], ["wolf", 20]]},
+		{"interval": 0.35, "gap": 0.0, "entries": [["armored", 14], ["fast", 20], ["wolf_sheep", 1]]},
 	],
 }
 

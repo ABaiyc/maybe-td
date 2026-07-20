@@ -24,10 +24,8 @@ var projectiles_parent: Node = null
 
 const MINE_CAP := 6
 const BEAM_DPS_SCALE := 2.0
-# 车道模式：塔只朝正前方(上方)自己这条竖道攻击，无距离上限（打到战场顶部）
-const LANE_HALF := 46.0
+# 割草模式：无任何范围/车道限制——怪一出场即全屏锁定攻击
 const FIELD_TOP := 90.0
-const DOMAIN_H := 300.0   # 领域塔的前方作用纵深
 
 var _cooldown: float = 0.0
 var _charge: float = 0.0
@@ -103,24 +101,19 @@ func _fire_cd() -> float:
 		return maxf(0.1, fire_interval - _ramp * 0.025)  # 越打越快，下限0.1s
 	return fire_interval
 
-## 车道判定：敌人在本塔正前方（上方）的竖道内
-func _in_lane(e: Enemy) -> bool:
-	return absf(e.global_position.x - global_position.x) <= LANE_HALF + e.radius * 0.5 \
-		and e.global_position.y < global_position.y - 10.0
-
-## 本车道内敌人，按"离塔最近(最靠近防线)"排序
-func _lane_enemies() -> Array:
+## 全场敌人（含越线围攻国王的），按威胁排序：越靠下(越接近国王)越优先
+func _threat_sorted() -> Array:
 	var arr: Array = []
 	for e in _enemies():
-		if e.is_queued_for_deletion() or not e.hittable_by(comp) or not _in_lane(e):
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
 			continue
 		arr.append(e)
 	arr.sort_custom(func(a, b): return a.global_position.y > b.global_position.y)
 	return arr
 
 func _nearest_n(n: int) -> Array:
-	var lane := _lane_enemies()
-	return lane.slice(0, mini(n, lane.size()))
+	var all := _threat_sorted()
+	return all.slice(0, mini(n, all.size()))
 
 func _catalyst_mult() -> float:
 	var m := 1.0
@@ -132,20 +125,20 @@ func _catalyst_mult() -> float:
 	return m
 
 func _find_nearest() -> Enemy:
-	var lane := _lane_enemies()
-	return null if lane.is_empty() else lane[0]
+	# 全场威胁最高者（最接近国王）
+	var all := _threat_sorted()
+	return null if all.is_empty() else all[0]
 
 func _find_highest_hp() -> Enemy:
 	var best: Enemy = null
 	var best_hp := -1.0
-	for e in _lane_enemies():
+	for e in _threat_sorted():
 		if e.hp > best_hp:
 			best_hp = e.hp
 			best = e
 	return best
 
 func _find_farthest() -> Enemy:
-	# 车道内走得最远 = 最接近防线（y 最大）= 车道首个
 	return _find_nearest()
 
 func _dist_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
@@ -153,39 +146,60 @@ func _dist_seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var t: float = 0.0 if ab.length_squared() == 0.0 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
 	return p.distance_to(a + ab * t)
 
-# ── 激光束：垂直向上打本车道，穿透前 pierce+1 个 ──
+# ── 激光束：瞄准跟随目标的方向光束（无距离上限），沿线穿透 pierce+1 个 ──
+func _enemies_along(dirv: Vector2) -> Array:
+	var along: Array = []
+	for e in _enemies():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
+			continue
+		var rel: Vector2 = e.global_position - global_position
+		var proj: float = rel.dot(dirv)
+		if proj < 0.0:
+			continue
+		if (rel - dirv * proj).length() <= e.radius + 8.0:
+			along.append([proj, e])
+	along.sort_custom(func(a, b): return a[0] < b[0])
+	return along
+
 func _do_beam(delta: float) -> void:
 	_beam_pts = []
 	var burst := id == "beam_burst"
-	var lane := _lane_enemies()
-	if lane.is_empty():
-		_focus_target = null
-		_focus_t = 0.0
-		queue_redraw()
-		return
+	var targets: Array
+	if burst:
+		# 锁定单一目标持续照射，满1秒引爆
+		if _focus_target == null or not is_instance_valid(_focus_target) or _focus_target.is_queued_for_deletion():
+			_focus_target = _find_nearest()
+			_focus_t = 0.0
+		if _focus_target == null:
+			queue_redraw()
+			return
+		targets = [_focus_target]
+	else:
+		targets = _nearest_n(2 if id == "LL" else 1)   # 聚焦激光：双束打两个敌人
+		if targets.is_empty():
+			queue_redraw()
+			return
 	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult()
 	_cooldown -= delta
-	# 爆裂炮激光阶段不附元素，只有爆炸那一下才附
 	var do_debuff := debuff and not burst and _cooldown <= 0.0
 	if do_debuff:
 		_cooldown = 0.4
-	var far_y := global_position.y - 40.0
-	var hits := 0
-	for e in lane:
-		if hits > pierce:
-			break
-		e.take_damage(dps * delta, ignore_armor)
-		if do_debuff:
-			_beam_debuff(e)
-		far_y = e.global_position.y
-		hits += 1
-	_beam_pts.append([global_position, Vector2(global_position.x, far_y if hits > 0 else FIELD_TOP)])
+	for tgt in targets:
+		var dirv: Vector2 = tgt.global_position - global_position
+		dirv = Vector2.UP if dirv.length() < 1.0 else dirv.normalized()
+		var far := global_position
+		var hits := 0
+		for pair in _enemies_along(dirv):
+			if hits > pierce:
+				break
+			var e: Enemy = pair[1]
+			e.take_damage(dps * delta, ignore_armor)
+			if do_debuff:
+				_beam_debuff(e)
+			far = e.global_position
+			hits += 1
+		_beam_pts.append([global_position, far if hits > 0 else global_position + dirv * 900.0])
 	if burst:
-		# 聚焦车道最前敌人：同一目标持续照射满1秒引爆
-		var front: Enemy = lane[0]
-		if front != _focus_target:
-			_focus_target = front
-			_focus_t = 0.0
 		_focus_t += delta
 		if _focus_t >= 1.0:
 			_focus_t = 0.0
@@ -255,7 +269,7 @@ func _nearest_others(pos: Vector2, n: int, visited: Dictionary, radius: float) -
 		visited[arr[i][1].get_instance_id()] = true
 	return out
 
-# ── 领域：塔正前方一条竖向元素地带，进入者持续掉血+减速 ──
+# ── 领域：以塔为中心展开元素领域，进入者持续掉血+减速 ──
 func _do_domain(delta: float) -> void:
 	var dps := damage * BEAM_DPS_SCALE * _catalyst_mult() * delta
 	_cooldown -= delta
@@ -265,9 +279,7 @@ func _do_domain(delta: float) -> void:
 	for e in _enemies():
 		if e.is_queued_for_deletion():
 			continue
-		var dx: float = absf(e.global_position.x - global_position.x)
-		var dy: float = global_position.y - e.global_position.y
-		if dx <= LANE_HALF + 12.0 + e.radius and dy > 0.0 and dy <= DOMAIN_H:
+		if global_position.distance_to(e.global_position) <= splash + e.radius:
 			e.take_damage(dps, ignore_armor)
 			if do_debuff:
 				e.apply_debuff("slow", 0.7, 0.8)
@@ -317,12 +329,8 @@ func _random_path_point() -> Vector2:
 		if cands.is_empty():
 			return Vector2(-9999, -9999)
 		return cands[randi() % cands.size()]
-	# 车道模式：在本塔正前方竖道内随机撒雷
-	var px := global_position.x + randf_range(-LANE_HALF * 0.75, LANE_HALF * 0.75)
-	var py := randf_range(FIELD_TOP + 40.0, global_position.y - 70.0)
-	if py <= FIELD_TOP:
-		return Vector2(-9999, -9999)
-	return Vector2(clampf(px, 20.0, 1100.0), py)
+	# 割草模式：在整个冲锋区随机撒雷
+	return Vector2(randf_range(40.0, 1080.0), randf_range(FIELD_TOP + 40.0, 540.0))
 
 # ── 充能炮 ──
 func _do_charge(delta: float) -> void:
@@ -335,11 +343,16 @@ func _do_charge(delta: float) -> void:
 		_railgun_fire(1.0)
 
 func _railgun_fire(scale: float) -> void:
-	# 垂直向上贯穿整条车道
-	var endp := Vector2(global_position.x, FIELD_TOP)
+	# 朝威胁最高的敌人方向轰出一道贯穿长线
+	var t := _find_farthest()
+	var dirv := (t.global_position - global_position).normalized() if t != null else Vector2.UP
+	var endp := global_position + dirv * 1600.0
 	var dmg := damage * scale * _catalyst_mult()
-	for e in _lane_enemies():
-		e.take_damage(dmg, ignore_armor)
+	for e in _enemies():
+		if e.is_queued_for_deletion() or not e.hittable_by(comp):
+			continue
+		if _dist_seg(e.global_position, global_position, endp) <= 40.0 + e.radius:
+			e.take_damage(dmg, ignore_armor)
 	_charge = 0.0
 	_flash = 0.22
 	_flash_to = endp
@@ -530,14 +543,10 @@ func _spawn_aoe(dest: Vector2, sp: float, dmg: float, split: int) -> void:
 
 # ── 绘制 ──
 func _draw() -> void:
-	# 车道提示：塔正前方淡淡的一条竖道（这就是它的攻击区）
-	var lane_top := FIELD_TOP - global_position.y
-	draw_rect(Rect2(Vector2(-LANE_HALF, lane_top), Vector2(LANE_HALF * 2.0, -lane_top - 26.0)), Color(color.r, color.g, color.b, 0.045))
-	# 领域：塔前竖向元素地带
+	# 领域：塔周身元素领域
 	if atk == "domain":
-		var dh := minf(DOMAIN_H, global_position.y - FIELD_TOP)
-		draw_rect(Rect2(Vector2(-LANE_HALF - 12.0, -dh), Vector2((LANE_HALF + 12.0) * 2.0, dh - 20.0)), Color(color.r, color.g, color.b, 0.13))
-		draw_rect(Rect2(Vector2(-LANE_HALF - 12.0, -dh), Vector2((LANE_HALF + 12.0) * 2.0, dh - 20.0)), Color(color.r, color.g, color.b, 0.4), false, 2.0)
+		draw_circle(Vector2.ZERO, splash, Color(color.r, color.g, color.b, 0.10))
+		draw_arc(Vector2.ZERO, splash, 0.0, TAU, 48, Color(color.r, color.g, color.b, 0.4), 2.0)
 	# 激光束
 	if atk == "beam":
 		var w := 3.0 + tier * 1.5
@@ -557,8 +566,8 @@ func _draw() -> void:
 	if _flash > 0.0:
 		var lw := 10.0 if atk == "charge" else 2.5
 		draw_line(Vector2.ZERO, to_local(_flash_to), Color(color.r, color.g, color.b, _flash * 4.0), lw)
-	# 猪底座
-	var r := 16.0 + tier * 2.0
+	# 猪底座（1 格塔，按 40px 格缩放）
+	var r := 12.0 + tier * 2.0
 	draw_circle(Vector2.ZERO, r, Color(0.96, 0.66, 0.74))
 	draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(0.7, 0.4, 0.5), 2.0)
 	draw_circle(Vector2(0, 3), 6.0, Color(0.86, 0.5, 0.58))

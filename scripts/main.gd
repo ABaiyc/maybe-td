@@ -8,9 +8,9 @@ const ROWS := 18
 const KING_CLEAR := 40.0  # 国王在塔位带下方，只需小禁建圈防止贴脸
 const SELL_REFUND := 0.6
 
-# 竖版车道模式：上方出怪往下走，下方一条塔位带（两格高，正好放 2×2 塔）
+# 竖版割草模式：上方出怪往下压，下方一排 1 格塔位（最多 28 座，弹幕管够）
 const ROW_TOP := 560.0      # 塔位带上缘 = 防线
-const ROW_BOTTOM := 640.0   # 塔位带下缘
+const ROW_BOTTOM := 600.0   # 塔位带下缘（一格高 = 一排塔）
 
 # 建造区边界：格子中心 x 超过此值为右侧 UI 栏，永久禁建
 const BUILD_RIGHT := 1120.0
@@ -679,23 +679,24 @@ func _draw_palette() -> void:
 # ── 仅供无头验证 ──
 func _run_autoplay() -> void:
 	GameState.add_gold(20000)
-	# 沿下方塔位带铺各原型塔（跳过国王禁建区）
+	# 沿下方一排塔位铺满各原型塔（1格塔，割草弹幕）
 	var adv := ["L", "E", "B", "mine_layer", "reactor", "railgun",
-		"catalyst", "twin_laser", "prism", "barrage", "ele_matrix"]
+		"catalyst", "twin_laser", "prism", "barrage", "ele_matrix",
+		"BB", "LL", "EE", "LB", "EB", "LE", "burst_gl", "gl_array", "anti_mat"]
 	var col := 0
 	var placed: Array = []
 	for tid in adv:
 		var size := TowerDefs.footprint(tid)
-		while col <= COLS - 2 and not _can_place(Vector2i(col, 14), size):
+		while col <= COLS - 1 and not _can_place(Vector2i(col, 14), size):
 			col += 1
-		if col > COLS - 2:
+		if col > COLS - 1:
 			break
 		placed.append(_spawn_tower(tid, Vector2i(col, 14), size, false))
-		col += 2
-	# 合成断言：最后两个空位放 L+L 合成
+		col += 1
+	# 合成断言：末尾空位放 L，与首塔 L 合成
 	var pa: Vector2i = Vector2i(-1, -1)
-	for c2 in range(COLS - 2, 0, -1):
-		if _can_place(Vector2i(c2, 14), Vector2i(2, 2)):
+	for c2 in range(COLS - 1, 0, -1):
+		if _can_place(Vector2i(c2, 14), Vector2i(1, 1)):
 			pa = Vector2i(c2, 14)
 			break
 	if pa.x >= 0:

@@ -134,6 +134,6 @@ static func ids_by_tier(t: int) -> Array:
 static func color_of(id: String) -> Color:
 	return Color(TOWERS.get(id, {}).get("col", "ffffff"))
 
-## 占地格数 (列, 行)：所有塔统一 4 格（2×2）。
+## 占地格数 (列, 行)：所有塔统一 1 格（割草模式，一排能塞下更多塔）。
 static func footprint(_id: String) -> Vector2i:
-	return Vector2i(2, 2)
+	return Vector2i(1, 1)

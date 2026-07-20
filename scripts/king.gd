@@ -26,9 +26,10 @@ func _draw() -> void:
 		Vector2(0, -56), Vector2(8, -42), Vector2(20, -52), Vector2(20, -34),
 	])
 	draw_colored_polygon(crown, Color(1.0, 0.84, 0.2))
-	# 血条
-	var w := 80.0
+	# 血条（画在国王右侧，避免与塔位带重叠）
+	var w := 140.0
 	var ratio: float = clampf(GameState.king_hp / GameState.king_max_hp, 0.0, 1.0)
-	draw_rect(Rect2(-w / 2.0, -72.0, w, 8.0), Color(0, 0, 0, 0.6))
+	draw_rect(Rect2(52.0, -8.0, w, 12.0), Color(0, 0, 0, 0.6))
 	var bar_col := Color(0.3, 0.9, 0.4) if ratio > 0.3 else Color(0.95, 0.4, 0.3)
-	draw_rect(Rect2(-w / 2.0, -72.0, w * ratio, 8.0), bar_col)
+	draw_rect(Rect2(52.0, -8.0, w * ratio, 12.0), bar_col)
+	draw_rect(Rect2(52.0, -8.0, w, 12.0), Color(1, 1, 1, 0.35), false, 1.0)
