@@ -12,6 +12,10 @@ const KING_CLEAR := 40.0
 # 下方一排 1 格塔位
 const ROW_TOP := 560.0
 const ROW_BOTTOM := 600.0
+# 仅 5 个固定塔位（居中，间隔排布；两侧空位留给后续美术）
+const SLOT_CELLS: Array = [
+	Vector2i(8, 14), Vector2i(11, 14), Vector2i(14, 14), Vector2i(17, 14), Vector2i(20, 14),
+]
 # 右侧留给作弊器的 UI 栏
 const BUILD_RIGHT := 1120.0
 
@@ -72,6 +76,11 @@ var choice_panel: Control
 var _msg_timeout := 0.0
 
 const ELEMS := ["L", "E", "B"]
+const ELEM_BRIEF := {
+	"L": "穿透光束 · 持续伤害",
+	"E": "范围爆炸 · 元素效果",
+	"B": "高速连射 · 稳定输出",
+}
 const STAT_OPTS := [
 	["攻击 +10%", "dmg"],
 	["攻速 +8%", "spd"],
@@ -110,20 +119,12 @@ func _build_king() -> void:
 	add_child(king)
 
 func _compute_blocked() -> void:
+	# 只有 SLOT_CELLS 里的 5 个固定塔位可建，其余全部禁建
 	blocked.clear()
-	var kpos: Vector2 = cfg["king_pos"]
 	for cx in COLS:
 		for cy in ROWS:
 			var c := Vector2i(cx, cy)
-			var center := _cell_center(c)
-			var bad := false
-			if center.y < ROW_TOP or center.y > ROW_BOTTOM:
-				bad = true
-			elif center.x > BUILD_RIGHT:
-				bad = true
-			elif center.distance_to(kpos) < KING_CLEAR:
-				bad = true
-			if bad:
+			if not SLOT_CELLS.has(c):
 				blocked[c] = true
 
 func _build_hud() -> void:
@@ -146,15 +147,17 @@ func _build_hud() -> void:
 	start_button.pressed.connect(_on_start)
 	layer.add_child(start_button)
 
-	# 升级三选一面板
+	# 升级三选一面板（固定尺寸+间距，避免长文本把按钮撑到重叠）
 	choice_panel = Control.new()
 	choice_panel.visible = false
 	layer.add_child(choice_panel)
 	for i in 3:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(220, 92)
-		b.position = Vector2(280 + i * 240, 300)
-		b.add_theme_font_size_override("font_size", 16)
+		b.custom_minimum_size = Vector2(230, 96)
+		b.size = Vector2(230, 96)
+		b.position = Vector2(245 + i * 260, 300)
+		b.clip_text = true
+		b.add_theme_font_size_override("font_size", 17)
 		b.pressed.connect(_on_choice.bind(i))
 		choice_panel.add_child(b)
 		choice_buttons.append(b)
@@ -275,8 +278,7 @@ func _show_choice() -> void:
 			b.text = "%s" % STAT_OPTS[i][0]
 		else:
 			var elem: String = ELEMS[i]
-			var d := TowerDefs.get_def(elem)
-			b.text = "%s (%s)\n%s" % [d["n"], elem, str(d["desc"]).substr(0, 22)]
+			b.text = "%s (%s)\n%s" % [TowerDefs.name_of(elem), elem, ELEM_BRIEF[elem]]
 	_set_message("升级！选择一个方向：" if actions_done > 0 else "挑选你的初始猪塔：", 0.0)
 	choice_panel.show()
 
@@ -483,6 +485,11 @@ func _draw() -> void:
 	draw_line(Vector2(0, ROW_TOP), Vector2(BUILD_RIGHT + 20.0, ROW_TOP), Color(0.85, 0.25, 0.25, 0.9), 3.0)
 	draw_string(_font, Vector2(12, ROW_TOP - 8), "⚔ 防线 —— 狼越过这里就会围攻国王", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.9, 0.5, 0.5, 0.8))
 	draw_rect(Rect2(0, ROW_TOP, BUILD_RIGHT + 20.0, ROW_BOTTOM - ROW_TOP), bg_color.lightened(0.06))
+	# 5 个固定塔位底座（常显）
+	for sc in SLOT_CELLS:
+		var sr := Rect2(Vector2(sc.x * CELL, sc.y * CELL) + Vector2(3, 3), Vector2(CELL - 6, CELL - 6))
+		draw_rect(sr, Color(0.55, 0.5, 0.35, 0.25))
+		draw_rect(sr, Color(0.8, 0.75, 0.5, 0.5), false, 2.0)
 	draw_rect(Rect2(0, ROW_BOTTOM, BUILD_RIGHT + 20.0, 720.0 - ROW_BOTTOM), bg_color.darkened(0.25))
 	draw_string(_font, Vector2(12, 706), "🏰 王座后方 —— 守住国王！", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.85, 0.4, 0.6))
 	draw_string(_font, Vector2(700, 34), Levels.CONFIG.get("name", ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.85))
@@ -625,7 +632,7 @@ func _run_autoplay() -> void:
 					print("FAIL t3 not capped ", t3); fails += 1
 	print("[AUTOPLAY] upgrade-table fails=", fails)
 	# 起始塔 + 直接开战
-	_spawn_tower("B", Vector2i(10, 14))
+	_spawn_tower("B", Vector2i(14, 14))
 	actions_done = 1
 	started = true
 	prep_timer = 1.0

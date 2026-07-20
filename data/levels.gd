@@ -15,13 +15,13 @@ const CONFIG := {
 }
 
 # ── 分数难度曲线 ──
-## 出怪间隔：随分数缩短
+## 出怪间隔：开局慢（1.4s 一只），随分数缩短
 static func spawn_interval(score: int) -> float:
-	return clampf(0.85 - float(score) / 2500.0, 0.16, 0.85)
+	return clampf(1.4 - float(score) / 1500.0, 0.18, 1.4)
 
-## 敌人血量倍率：随分数增厚
+## 敌人血量倍率：开局偏脆（0.65x，一座一级塔能应付），随分数增厚
 static func hp_mult(score: int) -> float:
-	return 1.0 + float(score) / 600.0
+	return 0.65 + float(score) / 650.0
 
 ## 敌人移速倍率：缓慢上升，封顶 1.6
 static func speed_mult(score: int) -> float:
