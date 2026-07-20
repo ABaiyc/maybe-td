@@ -24,6 +24,7 @@ var dir: Vector2 = Vector2.RIGHT  # pierce 用
 var dest: Vector2 = Vector2.ZERO  # aoe 用
 var _hit := {}                    # pierce 已命中集合
 var _life := 2.5
+var _last_dir := Vector2.UP       # 目标死亡后沿此方向继续飞
 
 func _process(delta: float) -> void:
 	if not GameState.active():
@@ -44,26 +45,46 @@ func _process(delta: float) -> void:
 
 func _move_single(delta: float) -> void:
 	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion():
-		queue_free()
-		return
+		# 目标死亡 → 就近换新目标，而不是消失；没敌人就沿原方向飞完
+		target = _nearest_any()
+		if target == null:
+			global_position += _last_dir * speed * delta
+			return
 	var to_t: Vector2 = target.global_position - global_position
 	var dist: float = to_t.length()
 	var step: float = speed * delta
+	_last_dir = to_t / maxf(dist, 0.001)
 	if step >= dist - 6.0:
 		target.take_damage(damage, ignore_armor)
 		queue_free()
 		return
-	global_position += to_t / dist * step
+	global_position += _last_dir * step
+
+func _nearest_any() -> Enemy:
+	var best: Enemy = null
+	var best_d := INF
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e.is_queued_for_deletion():
+			continue
+		if e.stealth and not can_hit_stealth:
+			continue
+		var d: float = global_position.distance_to(e.global_position)
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
 
 func _move_bounce(delta: float) -> void:
 	if target == null or not is_instance_valid(target) or target.is_queued_for_deletion():
 		target = _next_bounce_target()
 		if target == null:
-			queue_free()
+			# 没有可弹射的目标 → 沿原方向飞完，不凭空消失
+			global_position += _last_dir * speed * delta
 			return
 	var to_t: Vector2 = target.global_position - global_position
 	var dist: float = to_t.length()
 	var step: float = speed * delta
+	_last_dir = to_t / maxf(dist, 0.001)
 	if step >= dist - 6.0:
 		target.take_damage(damage, ignore_armor)
 		if debuff:
