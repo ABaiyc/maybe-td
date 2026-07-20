@@ -5,7 +5,7 @@ extends Node2D
 const CELL := 40.0
 const COLS := 32
 const ROWS := 18
-const KING_CLEAR := 72.0
+const KING_CLEAR := 40.0  # 国王在塔位带下方，只需小禁建圈防止贴脸
 const SELL_REFUND := 0.6
 
 # 竖版车道模式：上方出怪往下走，下方一条塔位带（两格高，正好放 2×2 塔）
@@ -558,6 +558,9 @@ func _draw() -> void:
 	draw_string(_font, Vector2(12, ROW_TOP - 8), "⚔ 防线 —— 狼越过这里就会围攻国王", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.9, 0.5, 0.5, 0.8))
 	# 塔位带
 	draw_rect(Rect2(0, ROW_TOP, BUILD_RIGHT + 20.0, ROW_BOTTOM - ROW_TOP), bg_color.lightened(0.06))
+	# 国王后方区（塔位带下方）
+	draw_rect(Rect2(0, ROW_BOTTOM, BUILD_RIGHT + 20.0, 720.0 - ROW_BOTTOM), bg_color.darkened(0.25))
+	draw_string(_font, Vector2(12, 706), "🏰 王座后方 —— 守住国王！", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.85, 0.4, 0.6))
 	draw_string(_font, Vector2(700, 34), "第%d关 · %s" % [GameState.current_level + 1, level.get("name", "")], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.85))
 	draw_string(_font, Vector2(700, 56), "按1/2选关(需解锁)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 
@@ -604,7 +607,7 @@ func _draw() -> void:
 	_draw_palette()
 	if cheat_on:
 		_draw_cheat()
-	draw_string(_font, Vector2(8, 712), "开发版 · 按 C 切换作弊（免费放置任意塔）", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.8, 0.5))
+	draw_string(_font, Vector2(880, 712), "开发版 · 按 C 切换作弊（免费放置任意塔）", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.8, 0.5))
 
 func _cheat_rect(i: int) -> Rect2:
 	var col := i % CHEAT_COLS

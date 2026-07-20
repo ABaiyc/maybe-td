@@ -1,4 +1,4 @@
-extends RefCounted
+﻿extends RefCounted
 class_name Levels
 ## 关卡数据（竖版车道模式）：上方出怪往下走，下方一排塔位，塔位带后是大肥猪国王防线。
 ## 波次 waves：每波 {interval, entries:[[敌人id, 数量], ...], gap(波后间隔秒)}。
@@ -13,7 +13,7 @@ const LEVEL1 := {
 	"name": "草原防线",
 	"bg": "23301f",
 	"field": "2c3a26",
-	"king_pos": Vector2(560, 600),
+	"king_pos": Vector2(560, 682),
 	"waves": [
 		{"interval": 0.7, "gap": 4.0, "entries": [["wolf", 6]]},
 		{"interval": 0.65, "gap": 4.0, "entries": [["wolf", 8], ["fast", 3]]},
@@ -27,7 +27,7 @@ const LEVEL2 := {
 	"name": "雪原防线",
 	"bg": "1c2230",
 	"field": "252c40",
-	"king_pos": Vector2(560, 600),
+	"king_pos": Vector2(560, 682),
 	"waves": [
 		{"interval": 0.6, "gap": 4.0, "entries": [["wolf", 8], ["armored", 2]]},
 		{"interval": 0.55, "gap": 4.0, "entries": [["fast", 8], ["armored", 4]]},

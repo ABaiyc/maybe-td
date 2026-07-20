@@ -30,6 +30,10 @@ var burn_time: float = 0.0
 var mark: float = 0.0       # 集火标记：受到伤害放大 (1+mark)
 var mark_time: float = 0.0
 
+# 伤害数字（0.4s 合并一次，避免激光每帧刷屏）
+var _dmg_accum: float = 0.0
+var _dmg_t: float = 0.0
+
 # 围攻
 var besieging: bool = false
 var _besiege_cd: float = 0.0
@@ -59,10 +63,23 @@ func _process(delta: float) -> void:
 	if not GameState.running:
 		return
 	_tick_debuffs(delta)
+	_dmg_t -= delta
+	if _dmg_accum >= 0.5 and _dmg_t <= 0.0:
+		_flush_damage_number()
 	if besieging:
 		_besiege(delta)
 		return
 	_advance(delta)
+
+func _flush_damage_number() -> void:
+	if _dmg_accum < 0.5 or get_parent() == null:
+		return
+	var n := DamageNumber.new()
+	n.amount = _dmg_accum
+	n.global_position = global_position + Vector2(randf_range(-8, 8), -radius - 8.0)
+	get_parent().add_child(n)
+	_dmg_accum = 0.0
+	_dmg_t = 0.4
 
 func _advance(delta: float) -> void:
 	if index >= waypoints.size():
@@ -144,7 +161,9 @@ func _apply_damage(amount: float, _is_dot: bool) -> void:
 	if hp <= 0.0:
 		return
 	hp -= amount
+	_dmg_accum += amount
 	if hp <= 0.0:
+		_flush_damage_number()
 		GameState.add_gold(reward)
 		queue_free()
 	else:
